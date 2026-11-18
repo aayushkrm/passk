@@ -77,3 +77,11 @@ section. Read it before drawing a conclusion from any number.
 - **No OpenTelemetry SDK.** Traces are JSONL with OpenTelemetry GenAI attribute names. They are
   not exported to a collector.
 - **Not on PyPI.** The package is installed from the GitHub repository or from a release wheel.
+
+## Undeclared argument names (strict mode)
+
+- The default is lenient on both transports: an argument name the tool does not declare is dropped.
+  The E3 runs used this behaviour over MCP, so the committed results depend on it. The
+  `strict_args` option rejects such names, but no experiment uses it. Under strict mode, failure
+  counts such as `schema_error` would be higher, so the committed failure counts may be lower than
+  they would be under strict mode. Treat them as a lenient-mode result (`docs/deviations.md`, D24).

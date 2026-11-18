@@ -240,3 +240,66 @@ All of these are recorded in `docs/prereg.md`, Amendment 1.
   `results/gates/*.txt` file. The text file is still shown verbatim in the README block.
 - **Optional arm.** The Qwen3-1.7B item is the lowest priority, so it is the one dropped when the
   cap is reached.
+
+## Review 2 fixes: transports, provenance and documentation
+
+### D24. E3 ran lenient over MCP; the earlier parity claim covered valid calls only
+
+- **What ran.** The E3 runs (both models) used the MCP stdio transport. The MCP layer drops argument
+  names that a tool does not declare before the tool runs, so an undeclared name was silently
+  ignored. The in-process environment rejected the same call with `invalid arguments`. The two
+  transports therefore differed on undeclared names. The README's "identical trajectories" claim
+  was true for valid calls only. Two recorded E3 trajectories show the effect: 0.5B `t1_07`
+  trial 0 (a `get_compound` call with an extra `arguments` key, accepted) and 0.5B `t3_01` trial 4
+  (a `place_order` with an extra `reason` key, accepted and placed). Both were found by the second
+  review (REVIEW-2, item R-1).
+- **Change.** Lenient is now the default on both transports. The in-process environment drops
+  undeclared names, as the MCP layer always did, so the E3 results and the E5 run stay comparable.
+  A new opt-in env parameter, `strict_args` (default false), rejects undeclared names on both
+  transports. Under strict mode the MCP server tightens the argument model of the environment tools
+  only. The control tools are unchanged. The two transports' error texts differ (labstock's message
+  in process, the SDK's validation message over MCP), and both name the undeclared key.
+- **Tests.** `tests/test_strict_args.py` checks lenient parity across the transports, strict
+  rejection on both, and that valid calls give the same results in strict mode. The E1 and E2
+  calibrations are unaffected, because their agents never send undeclared names.
+- **Effect on results.** None on the completed E3 runs, which were lenient over MCP. E5 and E4 run
+  under the same lenient behaviour. Strict mode has not been used in any experiment.
+
+### D25. Bootstrap seed: 2026 in the code, 0 in the prereg
+
+- The prereg (`docs/prereg.md`, Common settings) says the pass@k and pass^k bootstrap uses seed 0.
+  The runner computes the run summary with `metrics.summarize_tasks(..., seed=config.base_seed)`,
+  so the E3 confidence intervals use seed 2026, the run's base seed. The gate and the calibration use
+  seed 0, as the prereg says.
+- The reported E3 intervals are internally consistent: they match an independent recomputation
+  with seed 2026. The code was not changed, because that would change the completed results.
+- **Status.** Unlogged until this entry. Disclosed here. Intervals with seed 0 are not reported.
+
+### D26. No AC or battery state in env.json (recorded by the orchestrator, not by the tool)
+
+- The prereg (Common settings) asks for the power state in each run's `env.json`. `scripts/envinfo.py`
+  and `src/passk/envinfo.py` do not record it, and no thermal state either. Neither E3 `env.json`
+  has a power key.
+- The orchestrator checked `pmset` when the compute queue started and recorded AC Power. That
+  check is in the orchestrator's notes, not in the run records, and it was not logged per run.
+  Thermal state was not recorded.
+- **Status.** The tool still does not record the power state. It may be added later as a new key;
+  that would not change existing results.
+
+### D27. E3 ran from a dirty working tree; provenance now records a digest of it
+
+- Both E3 `env.json` files record `git_sha` 096ccb8 with `git_dirty` true. The working tree had
+  uncommitted changes that the commit does not describe. `git_dirty` has been in `env.json` since
+  the environment record was added, so the flag was present; what was missing was which dirty
+  state a run came from.
+- **Change.** `env.json` now also records `git_diff_sha256`: a SHA-256 over the binary diff against
+  HEAD and the `git status --porcelain` list. It covers tracked changes and the names of untracked
+  files, not their contents. Runs made after this change (E4 and E5) carry it. The E3 files do not,
+  because their records were written before the key existed.
+- **Effect on results.** None. It is an added key only.
+
+### D28. Strict argument mode is opt-in and untested in experiments
+
+- See D24 for the change and the tests. Strict mode is not used by any pre-registered run. Failure
+  counts such as `schema_error` under strict mode would be higher than under the lenient default
+  and cannot be compared with the committed E3 runs without a new run.

@@ -2,7 +2,7 @@
 
 pass^k for tool-using agents: an offline harness that measures whether an agent succeeds on every attempt, not just on one.
 
-> **Status.** The harness, the 24-task LabStock environment, the MCP server, the calibration (E1 and E2) and the demo are built and tested. **No model results exist yet.** The main runs (E3 to E5, E7) are pre-registered in [`docs/prereg.md`](docs/prereg.md) and will be reported here only once they exist. Everything under "Results" comes from committed JSON in `results/`.
+> **Status.** The harness, the 24-task LabStock environment, the MCP server, the calibration (E1 and E2) and the demo are built and tested. The E3 runs (Qwen2.5-0.5B and 1.5B, 24 tasks x 5 trials) have finished, but their results are **not committed yet**, so the results block below does not show them. E4 and E5 are still to run. The hosted arm (E7) was not completed on the free quota (see below). Everything under "Results" comes from committed JSON in `results/` and is rendered by `make report`.
 
 ## Quickstart (about 60 seconds)
 
@@ -22,7 +22,7 @@ For one task, run n independent trials and count c successes.
 
 The gap between pass@1 and pass^5 shows how much an agent's success depends on luck. A success counts only when the final environment state meets every goal assertion, with no policy violation and no forbidden assertion. There is no LLM judge.
 
-Each failed episode gets one primary category, by fixed precedence: `policy_violation`, `schema_error`, `tool_error_unrecovered`, `false_success_claim`, `loop`, `max_turns`, `wrong_state`. See [`docs/design.md`](docs/design.md).
+Each episode gets one primary category, checked in this order: `policy_violation` (any recorded violation), then `success` (the goal is met with no violation), then `schema_error`, `tool_error_unrecovered`, `false_success_claim`, `loop`, `max_turns` and `wrong_state`. A passing episode is never a failure. See [`docs/design.md`](docs/design.md).
 
 ## The environment
 
@@ -38,7 +38,9 @@ The tools are served over MCP v2 stdio:
 python -m passk.mcp_server labstock      # or: passk serve-tools labstock
 ```
 
-The server follows the 2026-07-28 MCP specification note: there are no sessions. Each episode's state is held by the server under an `env_handle` minted by `episode_reset`, and the client passes that handle explicitly on every call. The in-process and MCP stdio transports give identical trajectories for the oracle agent on all 24 tasks, and the test suite checks this. The `mcp` package version is recorded in each `env.json`.
+The server follows the 2026-07-28 MCP specification note: there are no sessions. Each episode's state is held by the server under an `env_handle` minted by `episode_reset`, and the client passes that handle explicitly on every call. Both transports give the same results for valid calls. The oracle agent's trajectories are identical in process and over MCP on all 24 tasks, and a test checks this. For calls that name an argument the tool does not declare, the two transports behaved differently before this release; see below. The `mcp` package version is recorded in each `env.json`.
+
+**Undeclared argument names.** By default (`lenient`) both transports drop an argument name that the tool does not declare, which is what the MCP layer has always done. The E3 runs used this behaviour over MCP, so it stays the default for comparability. Setting `env_params: {strict_args: true}` rejects such names with an `invalid arguments` error on both transports. Strict mode has not been used in any experiment, so its failure counts (for example `schema_error`) are not comparable with the committed runs. The parity test covers both modes. See [`docs/deviations.md`](docs/deviations.md) (D24) and [`docs/limitations.md`](docs/limitations.md).
 
 ## CLI
 
@@ -90,13 +92,13 @@ Environment record: [`results/calibration/env.json`](results/calibration/env.jso
 
 ## Experiments
 
-Pre-registered in [`docs/prereg.md`](docs/prereg.md) before any result file existed. Deviations are logged in [`docs/deviations.md`](docs/deviations.md). Failure reading is in [`docs/failure-analysis.md`](docs/failure-analysis.md) (not written yet).
+Pre-registered in [`docs/prereg.md`](docs/prereg.md) before any result file existed. Deviations are logged in [`docs/deviations.md`](docs/deviations.md). Failure reading is in [`docs/failure-analysis.md`](docs/failure-analysis.md): 13 quoted trajectories from the E3 runs, read by hand. The quoted sequences were re-checked against the trajectory files.
 
 | ID | Question | Status |
 |---|---|---|
 | E1 | Does the estimator track the analytic pass^k? | Run (SYNTHETIC) |
 | E2 | What are the gate's false-alarm rate and power? | Run (SYNTHETIC) |
-| E3 | pass@k and pass^k for Qwen2.5-0.5B and 1.5B | Pending |
+| E3 | pass@k and pass^k for Qwen2.5-0.5B and 1.5B | Finished; results not committed yet |
 | E4 | Does T=0 remove the pass^k gap? | Pending |
 | E5 | Does prompt v2 regress against v1 on the 1.5B model? | Pending |
 | E6 | Recovery from transient failures (stretch) | Not runnable yet (see deviations) |

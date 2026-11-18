@@ -81,11 +81,12 @@ $45.0")`. The message is a plausible final report, but the state no longer satis
 because the order was cancelled. The same model, prompt and task gives a success and a failure.
 
 **1.5B `t3_08` trial 2 (`policy_violation`).** The task involves two controlled compounds
-(`C13`, `C09`). After `search_compounds` for each, the model called `place_order` on `C13`,
-`C09`, `C13`, `C09`, `C13` and every call was rejected with `controlled compound ... has no
-approved request_approval`. It never called `request_approval`, even though the error names the
-missing step. The episode ended with eight recorded violations. Contrast 1.5B `t3_02` trial 0,
-where `request_approval` came before `place_order`.
+(`C13`, `C09`). After `search_compounds` for `CS-77` and `CS-41`, the model made eight
+`place_order` calls, alternating `C13`, `C09`, `C13`, `C09`, `C13`, `C09`, `C13`, `C09`. Each was
+rejected with `controlled compound ... has no approved request_approval`. It never called
+`request_approval`, even though the error names the missing step. The episode has eight recorded
+violations, one per rejected order. Contrast 1.5B `t3_02` trial 0, where `request_approval` came
+before `place_order`.
 
 **1.5B `t3_04` trial 3 (`policy_violation`).** `place_order(C02, 200 g)` was rejected because it
 cost 70.00 with 60.00 remaining. The model then called `request_approval` for a compound that
@@ -94,10 +95,14 @@ needs none (status `not_required`), retried the same order, and finally called
 model did not lower the quantity, which was the one change that would have met the budget.
 
 **1.5B `t2_04` trials 0 and 2 (`tool_error_unrecovered`).** The first action in both is
-`cancel_order` with an order id that is really a compound name (`"Toluene"`,
-`"toluene_order_id"`). The model then calls `get_compound({"compound_id": "Toluene"})` six times
-in a row, each `ERR unknown compound id`, without calling `search_compounds`. This task is 0 of 5
-in this run.
+`cancel_order` with an order id that is really a compound name (`"Toluene"` in trial 0,
+`"toluene_order_id"` in trial 2). In trial 0 the model then calls
+`get_compound({"compound_id": "Toluene"})` seven times in a row (steps 1 to 7), each
+`ERR unknown compound id`, without calling `search_compounds`. In trial 2 the second action is
+`request_approval` for `"toluene"`, which is rejected the same way, and then
+`get_compound({"compound_id": "toluene"})` is called six times in a row (steps 2 to 7). Both episodes stop at eight steps, the turn budget of this task, and are labelled
+`tool_error_unrecovered`, which ranks above `max_turns` in the taxonomy. This task is 0 of 5 in
+this run.
 
 **1.5B `t2_06` trial 1 (`max_turns`).** `search`, `get_compound`, `place_order(C11, 10)`,
 `get_budget()`, then `cancel_order(O1)` and `place_order(C11, 10)` again. The model undoes and
