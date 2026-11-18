@@ -15,7 +15,7 @@ import concurrent.futures
 import os
 import sys
 import threading
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from passk.mcp_server import (
@@ -35,6 +35,23 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 _SHUTDOWN_TIMEOUT_S = 10.0
+
+
+CHILD_ENV_KEYS: tuple[str, ...] = ("PATH", "PYTHONPATH", "HOME", "LANG", "VIRTUAL_ENV")
+"""Variables copied from the parent into the MCP server process. Nothing else is passed."""
+
+
+def child_environment(parent: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Return the minimal environment for the MCP server subprocess.
+
+    Args:
+        parent: Environment to copy from. Defaults to ``os.environ``.
+
+    Returns:
+        Only the keys in ``CHILD_ENV_KEYS`` that the parent defines.
+    """
+    source = os.environ if parent is None else parent
+    return {key: source[key] for key in CHILD_ENV_KEYS if key in source}
 
 
 class TransportError(RuntimeError):
@@ -432,12 +449,13 @@ class MCPStdioTransport:
         self._task = asyncio.current_task()
         from mcp import Client, StdioServerParameters
 
-        # The child inherits the parent environment so that PYTHONPATH and similar
-        # variables reach the server; it is our own code, started from sys.executable.
+        # The child gets only the whitelisted variables in CHILD_ENV_KEYS. The MCP SDK adds
+        # its own small default set (get_default_environment) under them. Secrets in the parent,
+        # such as an API key, are not passed to a process that does not need them.
         params = StdioServerParameters(
             command=self._command[0],
             args=list(self._command[1:]),
-            env=dict(os.environ),
+            env=child_environment(),
         )
         try:
             async with Client(params) as client:
