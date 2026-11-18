@@ -310,12 +310,17 @@ class OpenAICompatAgent:
         while True:
             self._pace()
             self._last_sent = self._clock()
+            # Raise outside the except block: a chained exception would keep the transport
+            # error (which can carry a URL) as __context__.
+            network_error: str | None = None
             try:
                 response = self._post(url, headers, payload, self.timeout_s)
             except OSError as exc:
+                network_error = type(exc).__name__
+            if network_error is not None:
                 if attempt >= self.max_retries:
                     raise ProviderError(
-                        f"network error after {attempt + 1} attempt(s): {type(exc).__name__}"
+                        f"network error after {attempt + 1} attempt(s): {network_error}"
                     ) from None
                 self._sleep(self._backoff(attempt, None))
                 attempt += 1
@@ -340,9 +345,13 @@ class OpenAICompatAgent:
         Raises:
             ProviderError: If the body is not a JSON object or carries an ``error`` field.
         """
+        invalid = object()
+        parsed: Any = invalid
         try:
             parsed = json.loads(body)
         except (json.JSONDecodeError, UnicodeDecodeError):
+            parsed = invalid  # raised below, outside the handler, so no body text is chained
+        if parsed is invalid:
             raise ProviderError("provider returned a body that is not JSON") from None
         if not isinstance(parsed, dict):
             raise ProviderError("provider returned a JSON value that is not an object") from None

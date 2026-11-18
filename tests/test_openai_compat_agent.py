@@ -386,8 +386,24 @@ def test_key_never_reaches_runner_outputs(tmp_path: Path) -> None:
         classify=classify,
     )
     report = run(config, tmp_path, deps=deps)
-    assert report.failure_totals == {"success": 1}
+    assert report.failure_totals == {}  # a pass is not counted as a failure
+    assert report.tasks[0].c == 1
     run_dir = tmp_path / "keycheck"
     written = "".join(p.read_text(encoding="utf-8") for p in run_dir.iterdir())
     assert TEST_KEY not in written
     assert clock.sleeps  # the 429 was retried
+
+
+def test_network_error_is_not_chained_into_provider_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from passk.agents.openai_compat import OpenAICompatAgent, ProviderError
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", TEST_KEY)
+
+    def fail(*_args: object, **_kwargs: object) -> object:
+        raise OSError("connection to internal-host.example failed")
+
+    agent = OpenAICompatAgent(model="m", post=fail, sleep=lambda _s: None, max_retries=0)
+    with pytest.raises(ProviderError) as info:
+        agent._request(b"{}")
+    assert info.value.__context__ is None
+    assert "internal-host" not in str(info.value)

@@ -102,18 +102,13 @@ def test_gate_is_reproducible(baseline: RunReport) -> None:
     assert gate(baseline, candidate, policy) == gate(baseline, candidate, policy)
 
 
-def test_falls_back_to_local_bootstrap_when_metrics_stub_raises(
-    baseline: RunReport, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_gate_refuses_runs_with_different_trial_counts(baseline: RunReport) -> None:
     candidate = _load("report_regression.json")
-    policy = GatePolicy(k=1, max_drop=0.10)
-    expected = gate(baseline, candidate, policy)
-
-    def not_yet(*_args: object, **_kwargs: object) -> tuple[float, float, float]:
-        raise NotImplementedError("paired_bootstrap: scheduled for work package P-A")
-
-    monkeypatch.setattr(metrics, "paired_bootstrap", not_yet)
-    assert gate(baseline, candidate, policy) == expected
+    changed = candidate.model_copy(
+        update={"tasks": [s.model_copy(update={"n": s.n + 1}) for s in candidate.tasks]}
+    )
+    with pytest.raises(ValueError, match="different trial counts"):
+        gate(baseline, changed, GatePolicy(k=1, max_drop=0.10))
 
 
 def test_uses_metrics_bootstrap_when_implemented(

@@ -15,7 +15,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import yaml
 from pydantic import ValidationError
 
@@ -66,30 +65,11 @@ def _check_policy(policy: GatePolicy) -> None:
         raise ValueError("policy alpha must lie strictly between 0 and 1")
 
 
-def _local_paired_bootstrap(
-    a: Sequence[float], b: Sequence[float], alpha: float
-) -> tuple[float, float, float]:
-    """Seeded percentile bootstrap over tasks for the mean of ``b - a``.
-
-    Same definition as ``passk.metrics.paired_bootstrap``. Used only until that function
-    is implemented.
-    """
-    diffs = np.asarray(b, dtype=float) - np.asarray(a, dtype=float)
-    rng = np.random.default_rng(BOOTSTRAP_SEED)
-    picks = rng.integers(0, diffs.size, size=(BOOTSTRAP_RESAMPLES, diffs.size))
-    means = diffs[picks].mean(axis=1)
-    low, high = np.quantile(means, [alpha / 2.0, 1.0 - alpha / 2.0])
-    return float(diffs.mean()), float(low), float(high)
-
-
 def _paired_ci(a: Sequence[float], b: Sequence[float], alpha: float) -> tuple[float, float, float]:
     """Return ``(mean_delta, ci_low, ci_high)`` for ``b - a`` with a seeded paired bootstrap."""
-    try:
-        return metrics.paired_bootstrap(
-            a, b, n_boot=BOOTSTRAP_RESAMPLES, alpha=alpha, seed=BOOTSTRAP_SEED
-        )
-    except NotImplementedError:
-        return _local_paired_bootstrap(a, b, alpha)
+    return metrics.paired_bootstrap(
+        a, b, n_boot=BOOTSTRAP_RESAMPLES, alpha=alpha, seed=BOOTSTRAP_SEED
+    )
 
 
 def _values_at_k(stats: Sequence[TaskStats], k: int, label: str) -> dict[str, float]:
@@ -129,6 +109,10 @@ def gate(baseline: RunReport, candidate: RunReport, policy: GatePolicy) -> GateD
             f"task ids differ: only in baseline {only_base}, only in candidate {only_cand}"
         )
 
+    base_n = {s.task_id: s.n for s in baseline.tasks}
+    cand_n = {s.task_id: s.n for s in candidate.tasks}
+    if base_n != cand_n:
+        raise ValueError("baseline and candidate ran different trial counts per task")
     ids = sorted(base)
     a = [base[task_id] for task_id in ids]
     b = [cand[task_id] for task_id in ids]

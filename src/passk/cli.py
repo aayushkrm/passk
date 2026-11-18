@@ -451,7 +451,11 @@ def site_cmd(
 def demo_cmd(
     json_output: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
 ) -> None:
-    """Run a SYNTHETIC scripted demo in under 30 s with no model and no downloads."""
+    """Run a SYNTHETIC scripted demo in under 30 s with no model and no downloads.
+
+    Exits 0 even when the gate prints FAIL, which is the expected result for a noisy agent.
+    Use `passk gate` for a CI exit code.
+    """
 
     def body() -> int:
         policy = GatePolicy(k=3, max_drop=0.10)
