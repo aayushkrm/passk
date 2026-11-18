@@ -45,8 +45,26 @@ NO_RESULTS = "No committed model results yet. The block fills in when `results/`
 
 sys.path.insert(0, str(REPO / "src"))
 
+from passk import metrics  # noqa: E402
 from passk.diff import is_synthetic, load_report, load_trajectories  # noqa: E402
+from passk.gate import gate, load_policy  # noqa: E402
 from passk.schema import RunReport, Trajectory  # noqa: E402
+
+CONFIGS = REPO / "configs"
+GATE_POLICY = CONFIGS / "gate.yaml"
+TOOL = "passk"
+CONTRACT_SCHEMA_VERSION = "1"
+MAX_ITEMS = 6
+TAGLINE = (
+    "pass^k for tool-using agents: an offline, CI-gated reliability harness that measures "
+    "whether an agent succeeds every time, not just once."
+)
+QUICKSTART = "uv tool install git+https://github.com/aayushkrm/passk && passk demo"
+LINKS: dict[str, str | None] = {
+    "repo": "https://github.com/aayushkrm/passk",
+    "site": "https://aayushkrm.github.io/passk/",
+    "release": None,
+}
 
 
 def _rel(path: Path) -> str:
@@ -209,15 +227,21 @@ def _load_gates() -> list[dict[str, str]]:
     ]
 
 
-def build_headline() -> dict[str, Any]:
-    """Collect every number the README quotes from the committed results."""
-    runs: list[dict[str, Any]] = []
-    for path in sorted(RESULTS.rglob("report.json")):
-        report = load_report(path)
-        runs.append(_run_record(report, path))
-    runs.sort(key=lambda r: r["run_id"])
+def collect_results() -> dict[str, Any]:
+    """Load every committed result once. Nothing here is typed by hand.
+
+    Returns:
+        ``reports`` (path and RunReport per run, sorted by path), ``runs`` (the README records),
+        ``calibration`` and ``gates``.
+    """
+    reports: list[tuple[Path, RunReport]] = [
+        (path, load_report(path)) for path in sorted(RESULTS.rglob("report.json"))
+    ]
+    runs = sorted(
+        (_run_record(report, path) for path, report in reports), key=lambda r: r["run_id"]
+    )
     return {
-        "schema": "passk-headline-1",
+        "reports": reports,
         "runs": runs,
         "calibration": _load_calibration(),
         "gates": _load_gates(),
@@ -311,16 +335,312 @@ def _run_block(run: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _block(headline: dict[str, Any]) -> str:
-    lines: list[str] = []
-    if headline["calibration"]:
-        lines += _calibration_block(headline["calibration"]) + [""]
-    for run in headline["runs"]:
+def _summary_mean(report: RunReport, metric: str, k: int) -> float | None:
+    value = report.summary.get(metric, {}).get(k)
+    return float(value["mean"]) if isinstance(value, dict) else None
+
+
+def _episodes(report: RunReport) -> int:
+    return sum(stats.n for stats in report.tasks)
+
+
+def _short_model(report: RunReport) -> str:
+    agent = report.env_info.get("agent")
+    if isinstance(agent, dict) and agent.get("repo_id"):
+        name = str(agent["repo_id"]).split("/")[-1]
+        return name.removesuffix("-GGUF")
+    return report.config.agent.kind
+
+
+def _leader(report: RunReport) -> str:
+    """The failure category with the largest share of episodes (success is not a failure)."""
+    totals = {name: count for name, count in report.failure_totals.items() if name != "success"}
+    episodes = _episodes(report)
+    if not totals or episodes == 0:
+        return "no failures recorded"
+    name, count = max(sorted(totals.items()), key=lambda kv: kv[1])
+    return f"{name} {_fmt_pct(count / episodes)} of episodes"
+
+
+def _gap(report: RunReport) -> tuple[float, float, float] | None:
+    """Mean of the per-task pass@1 minus pass^5, with its bootstrap 95% interval over tasks."""
+    values = [
+        task.pass_at_k[1] - task.pass_hat_k[5]
+        for task in report.tasks
+        if 1 in task.pass_at_k and 5 in task.pass_hat_k
+    ]
+    if not values:
+        return None
+    mean, low, high = metrics.bootstrap_ci(values, seed=0)
+    return mean, low, high
+
+
+def _item(
+    item_id: str,
+    label: str,
+    value: str,
+    detail: str,
+    *,
+    n: int | None,
+    ci: str | None,
+    synthetic: bool,
+    featured: bool,
+    source: str,
+) -> dict[str, Any]:
+    return {
+        "id": item_id,
+        "label": label,
+        "value": value,
+        "detail": detail,
+        "n": n,
+        "ci": ci,
+        "synthetic": synthetic,
+        "featured": featured,
+        "source": source,
+    }
+
+
+def _gap_item(
+    item_id: str, label: str, path: Path, report: RunReport, *, featured: bool
+) -> dict[str, Any] | None:
+    gap = _gap(report)
+    p1 = _summary_mean(report, "pass_at_k", 1)
+    p5 = _summary_mean(report, "pass_hat_k", 5)
+    if gap is None or p1 is None or p5 is None:
+        return None
+    mean, low, high = gap
+    prefix = "" if report.complete else "PARTIAL: "
+    detail = (
+        f"{_episodes(report)} episodes, {len(report.tasks)} tasks, {_short_model(report)}. "
+        f"Failure leader: {_leader(report)}."
+    )
+    if not report.complete:
+        detail += f" Stopped early: {report.stop_reason}."
+    return _item(
+        item_id,
+        label,
+        f"{prefix}pass@1 {p1:.3f} vs pass^5 {p5:.3f}, gap {mean:.3f}",
+        detail,
+        n=_episodes(report),
+        ci=f"95% CI on the gap [{low:.3f}, {high:.3f}]",
+        synthetic=is_synthetic(report.env_info),
+        featured=featured,
+        source=_rel(path),
+    )
+
+
+def _find(reports: list[tuple[Path, RunReport]], prefix: str) -> tuple[Path, RunReport] | None:
+    for path, report in reports:
+        if report.run_id.startswith(prefix) and "smoke" not in report.run_id:
+            return path, report
+    return None
+
+
+def _e5_item(reports: list[tuple[Path, RunReport]]) -> dict[str, Any] | None:
+    baseline = _find(reports, "e3-qwen2.5-1.5b")
+    candidate = _find(reports, "e5-qwen2.5-1.5b")
+    if baseline is None or candidate is None:
+        return None
+    path, cand = candidate
+    if not baseline[1].complete or not cand.complete:
+        return _item(
+            "e5-regression",
+            "E5 prompt v2 vs v1 (1.5B), regression gate",
+            "not evaluated: partial run",
+            "The gate refuses incomplete reports. Re-run the missing episodes first.",
+            n=_episodes(cand),
+            ci=None,
+            synthetic=False,
+            featured=False,
+            source=_rel(path),
+        )
+    try:
+        decision = gate(baseline[1], cand, load_policy(GATE_POLICY))
+    except ValueError:
+        return None  # different task sets or trial counts: no verdict to report
+    return _item(
+        "e5-regression",
+        "E5 prompt v2 vs v1 (1.5B), regression gate",
+        "PASS" if decision.passed else "FAIL",
+        " | ".join(decision.reasons),
+        n=_episodes(cand),
+        ci=(
+            f"delta 95% CI [{decision.ci_low:+.3f}, {decision.ci_high:+.3f}] "
+            f"(delta {decision.delta:+.3f})"
+        ),
+        synthetic=False,
+        featured=False,
+        source=_rel(path),
+    )
+
+
+def _e7_item(reports: list[tuple[Path, RunReport]]) -> dict[str, Any] | None:
+    found = _find(reports, "e7-")
+    if found is None:
+        return None
+    path, report = found
+    if not report.complete:
+        done = report.episodes_done if report.episodes_done is not None else _episodes(report)
+        total = report.episodes_total
+        progress = f"{done} of {total}" if total is not None else f"{done}"
+        reset = f" The provider limit resets at {report.reset_at} (UTC)." if report.reset_at else ""
+        return _item(
+            "e7-hosted",
+            "E7 hosted free-tier model (descriptive)",
+            f"PARTIAL: {progress} episodes",
+            f"Stopped: {report.stop_reason}.{reset} The full run was not completed on the free "
+            "quota; this is not a full result.",
+            n=done,
+            ci=None,
+            synthetic=False,
+            featured=False,
+            source=_rel(path),
+        )
+    gap = _gap_item(
+        "e7-hosted", "E7 hosted free-tier model (descriptive)", path, report, featured=False
+    )
+    return gap
+
+
+def _e1_item(calibration: dict[str, Any] | None) -> dict[str, Any] | None:
+    if calibration is None:
+        return None
+    e1 = calibration["e1"]
+    noise = ", ".join(f"{level['p']:.2f}" for level in e1["levels"])
+    return _item(
+        "e1-estimator",
+        "E1 estimator, max absolute error of pass^k",
+        f"max abs error {e1['max_abs_error']:.4f}",
+        f"Over k = 1..5 and per-step error p in {{{noise}}}, {e1['n_trials']} trials per task. "
+        f"Largest |z| {e1['max_abs_z']:.2f}; a value below 3.0 is consistent with the analytic "
+        "pass^k. Calibrates the tool, not a model.",
+        n=None,
+        ci=None,
+        synthetic=calibration["label"] == SYNTHETIC,
+        featured=False,
+        source=_rel(CALIBRATION),
+    )
+
+
+def _e2_item(calibration: dict[str, Any] | None) -> dict[str, Any] | None:
+    if calibration is None:
+        return None
+    e2 = calibration["e2"]
+    aa, ab = e2["aa"], e2["ab"]
+    return _item(
+        "e2-gate",
+        "E2 gate calibration: false-alarm rate and power",
+        f"false alarm {_fmt_pct(aa['rate'])}, power {_fmt_pct(ab['power'])}",
+        f"Gate k={e2['policy']['k']}, max_drop={e2['policy']['max_drop']}; {e2['pairs']} A/A "
+        f"and {e2['pairs']} A/B pairs at {e2.get('trials_per_task')} trials per task. Calibrates "
+        "the tool, not a model.",
+        n=e2["pairs"],
+        ci=(
+            f"false alarm 95% CI [{_fmt_pct(aa['ci95'][0])}, {_fmt_pct(aa['ci95'][1])}]; "
+            f"power 95% CI [{_fmt_pct(ab['ci95'][0])}, {_fmt_pct(ab['ci95'][1])}]"
+        ),
+        synthetic=calibration["label"] == SYNTHETIC,
+        featured=False,
+        source=_rel(CALIBRATION),
+    )
+
+
+def _environment_text() -> str:
+    """Hardware and platform of the committed calibration, read from its env.json."""
+    env_path = CALIBRATION.parent / "env.json"
+    if not env_path.is_file():
+        return "labstock environment served over MCP stdio; CPU only; hardware not recorded."
+    env = json.loads(env_path.read_text(encoding="utf-8"))
+    os_info = env.get("os") if isinstance(env.get("os"), dict) else {}
+    return (
+        f"{env.get('cpu_model', 'unknown CPU')} ({env.get('cores_physical', '?')} physical "
+        f"cores), {os_info.get('arch', '?')}, macOS {os_info.get('macos_version', '?')}; CPU "
+        "only. labstock environment served over MCP stdio. Results apply to this hardware."
+    )
+
+
+def build_items(results: dict[str, Any]) -> list[dict[str, Any]]:
+    """Headline items in priority order, each present only when its source result exists.
+
+    Priority: E3 0.5B and 1.5B gaps (featured), E5 verdict, E7, E1, E2, then the optional
+    Qwen3 arm. At most ``MAX_ITEMS`` are kept, so the last candidates are dropped first.
+    """
+    reports: list[tuple[Path, RunReport]] = results["reports"]
+    calibration = results["calibration"]
+    candidates: list[dict[str, Any] | None] = []
+    for item_id, prefix, label in (
+        ("e3-qwen2.5-0.5b", "e3-qwen2.5-0.5b", "E3 Qwen2.5-0.5B-Instruct (Q4_K_M)"),
+        ("e3-qwen2.5-1.5b", "e3-qwen2.5-1.5b", "E3 Qwen2.5-1.5B-Instruct (Q4_K_M)"),
+    ):
+        found = _find(reports, prefix)
+        candidates.append(
+            _gap_item(item_id, label, found[0], found[1], featured=True) if found else None
+        )
+    candidates.append(_e5_item(reports))
+    e7 = _e7_item(reports)
+    candidates.append(e7)
+    candidates.append(_e1_item(calibration))
+    candidates.append(_e2_item(calibration))
+    qwen3 = _find(reports, "e3-qwen3-1.7b")
+    candidates.append(
+        _gap_item(
+            "e3-qwen3-1.7b",
+            "E3 Qwen3-1.7B Q8_0 (optional arm)",
+            qwen3[0],
+            qwen3[1],
+            featured=True,
+        )
+        if qwen3
+        else None
+    )
+    return [item for item in candidates if item is not None][:MAX_ITEMS]
+
+
+def build_headline(results: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The hub's standard contract for ``results/headline.json``, from results JSON only.
+
+    Args:
+        results: Output of ``collect_results`` (collected here when omitted).
+
+    Returns:
+        A dict with ``schema_version``, ``tool``, ``tagline``, ``quickstart``, ``environment``,
+        ``items`` (at most ``MAX_ITEMS``) and ``links``.
+    """
+    if results is None:
+        results = collect_results()
+    return {
+        "schema_version": CONTRACT_SCHEMA_VERSION,
+        "tool": TOOL,
+        "tagline": TAGLINE,
+        "quickstart": QUICKSTART,
+        "environment": _environment_text(),
+        "items": build_items(results),
+        "links": dict(LINKS),
+    }
+
+
+def _headline_list(items: list[dict[str, Any]]) -> list[str]:
+    """Bullets for the README, built from the same item strings as headline.json."""
+    if not items:
+        return []
+    lines = ["**Headline** (from `results/headline.json`):", ""]
+    for item in items:
+        flag = "SYNTHETIC: " if item["synthetic"] else ""
+        ci = f" {item['ci']}." if item["ci"] else ""
+        lines.append(f"- {flag}**{item['label']}**: {item['value']}.{ci} {item['detail']}")
+    return lines + [""]
+
+
+def _block(results: dict[str, Any], contract: dict[str, Any]) -> str:
+    lines: list[str] = _headline_list(contract["items"])
+    if results["calibration"]:
+        lines += _calibration_block(results["calibration"]) + [""]
+    for run in results["runs"]:
         lines += _run_block(run) + [""]
-    for gate in headline["gates"]:
-        lines += [f"Gate output, [`{gate['file']}`]({gate['file']}):", "", "```", gate["text"]]
-        lines += ["```", ""]
-    if not headline["runs"] and not headline["calibration"]:
+    for gate_file in results["gates"]:
+        lines += [f"Gate output, [`{gate_file['file']}`]({gate_file['file']}):", "", "```"]
+        lines += [gate_file["text"], "```", ""]
+    if not results["runs"] and not results["calibration"]:
         lines.append(NO_RESULTS)
     return "\n".join(lines).rstrip() + "\n"
 
@@ -344,9 +664,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--headline", action="store_true", help="write only headline.json")
     args = parser.parse_args(argv)
 
-    headline = build_headline()
-    headline_text = _headline_text(headline)
-    body = _block(headline)
+    results = collect_results()
+    contract = build_headline(results)
+    headline_text = _headline_text(contract)
+    body = _block(results, contract)
     readme_text = README.read_text(encoding="utf-8")
     new_readme = _replace_block(readme_text, body)
 
@@ -360,8 +681,9 @@ def main(argv: list[str] | None = None) -> int:
             print("stale results output, run `make report`: " + ", ".join(stale))
             return 1
         print(
-            f"results up to date: {len(headline['runs'])} run(s), "
-            f"calibration {'present' if headline['calibration'] else 'absent'}"
+            f"results up to date: {len(results['runs'])} run(s), "
+            f"{len(contract['items'])} headline item(s), "
+            f"calibration {'present' if results['calibration'] else 'absent'}"
         )
         return 0
 

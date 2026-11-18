@@ -1,67 +1,36 @@
 {
-  "calibration": {
-    "e1": {
-      "levels": [
-        {
-          "max_abs_error": 0.0,
-          "max_abs_z": 0.0,
-          "p": 0.0
-        },
-        {
-          "max_abs_error": 0.041079505966201246,
-          "max_abs_z": 0.9663301052332379,
-          "p": 0.05
-        },
-        {
-          "max_abs_error": 0.03678370799694747,
-          "max_abs_z": 0.9735480065270059,
-          "p": 0.1
-        },
-        {
-          "max_abs_error": 0.04320373052631582,
-          "max_abs_z": 1.7228733617316585,
-          "p": 0.2
-        }
-      ],
-      "max_abs_error": 0.04320373052631582,
-      "max_abs_z": 1.7228733617316585,
-      "n_trials": 20
+  "environment": "Intel(R) Core(TM) i7-4770HQ CPU @ 2.20GHz (4 physical cores), x86_64, macOS 14.8.9; CPU only. labstock environment served over MCP stdio. Results apply to this hardware.",
+  "items": [
+    {
+      "ci": null,
+      "detail": "Over k = 1..5 and per-step error p in {0.00, 0.05, 0.10, 0.20}, 20 trials per task. Largest |z| 1.72; a value below 3.0 is consistent with the analytic pass^k. Calibrates the tool, not a model.",
+      "featured": false,
+      "id": "e1-estimator",
+      "label": "E1 estimator, max absolute error of pass^k",
+      "n": null,
+      "source": "results/calibration/validate.json",
+      "synthetic": true,
+      "value": "max abs error 0.0432"
     },
-    "e2": {
-      "aa": {
-        "ci95": [
-          0.020405632066152306,
-          0.07693206820093293
-        ],
-        "false_alarms": 8,
-        "p": 0.1,
-        "rate": 0.04
-      },
-      "ab": {
-        "ci95": [
-          0.9042130012276914,
-          0.9690146582965411
-        ],
-        "detections": 189,
-        "p_baseline": 0.05,
-        "p_candidate": 0.15,
-        "power": 0.945
-      },
-      "pairs": 200,
-      "policy": {
-        "alpha": 0.05,
-        "k": 3,
-        "max_drop": 0.1,
-        "min_pass_hat_k": null,
-        "require_significance": true
-      },
-      "trials_per_task": 5
-    },
-    "env_json": "results/calibration/env.json",
-    "label": "SYNTHETIC",
-    "validate_json": "results/calibration/validate.json"
+    {
+      "ci": "false alarm 95% CI [2.0%, 7.7%]; power 95% CI [90.4%, 96.9%]",
+      "detail": "Gate k=3, max_drop=0.1; 200 A/A and 200 A/B pairs at 5 trials per task. Calibrates the tool, not a model.",
+      "featured": false,
+      "id": "e2-gate",
+      "label": "E2 gate calibration: false-alarm rate and power",
+      "n": 200,
+      "source": "results/calibration/validate.json",
+      "synthetic": true,
+      "value": "false alarm 4.0%, power 94.5%"
+    }
+  ],
+  "links": {
+    "release": null,
+    "repo": "https://github.com/aayushkrm/passk",
+    "site": "https://aayushkrm.github.io/passk/"
   },
-  "gates": [],
-  "runs": [],
-  "schema": "passk-headline-1"
+  "quickstart": "uv tool install git+https://github.com/aayushkrm/passk && passk demo",
+  "schema_version": "1",
+  "tagline": "pass^k for tool-using agents: an offline, CI-gated reliability harness that measures whether an agent succeeds every time, not just once.",
+  "tool": "passk"
 }

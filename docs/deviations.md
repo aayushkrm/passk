@@ -227,3 +227,16 @@ All of these are recorded in `docs/prereg.md`, Amendment 1.
   `episodes_done`, all with defaults, so older reports still load.
 - **Effect on results.** None on the existing results, which are calibration output only. The
   byte-identical resume test covers trajectories and spans.
+
+### D23. Headline contract (hub standard)
+
+- `results/headline.json` now follows the hub's standard contract (`schema_version` "1"). It
+  replaces the earlier internal format, and nothing else read that format. Contract and schema are
+  in `schemas/headline.schema.json`, and `tests/test_headline.py` checks them.
+- **Six-item cap.** The failure-category leader is not a separate item. It is part of each E3
+  item's `detail`, because the separate items would push the E5 verdict or the E7 partial out of
+  the cap.
+- **E5 verdict.** It comes from `passk.gate.gate` on the two report JSON files, not from the
+  `results/gates/*.txt` file. The text file is still shown verbatim in the README block.
+- **Optional arm.** The Qwen3-1.7B item is the lowest priority, so it is the one dropped when the
+  cap is reached.
