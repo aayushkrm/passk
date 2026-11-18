@@ -14,6 +14,7 @@ source checkout. Only the standard library is used.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -237,7 +238,32 @@ def git_info(repo: Path) -> dict[str, Any]:
     return {
         "git_sha": sha,
         "git_dirty": None if status is None else bool(status),
+        "git_diff_sha256": _working_tree_digest(repo),
     }
+
+
+def _working_tree_digest(repo: Path) -> str | None:
+    """SHA-256 of the uncommitted state: the binary diff against HEAD and the status list.
+
+    It identifies which dirty tree a run came from. Untracked files are named in the status
+    list but their contents are not hashed. None outside a git work tree.
+    """
+    try:
+        diff = subprocess.run(
+            ["git", "diff", "HEAD", "--binary"], cwd=repo, capture_output=True, check=False
+        )
+        status = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=repo, capture_output=True, check=False
+        )
+    except OSError:
+        return None
+    if diff.returncode != 0 or status.returncode != 0:
+        return None
+    digest = hashlib.sha256()
+    digest.update(diff.stdout)
+    digest.update(b"\0")
+    digest.update(status.stdout)
+    return digest.hexdigest()
 
 
 def package_versions(names: tuple[str, ...]) -> dict[str, str | None]:
