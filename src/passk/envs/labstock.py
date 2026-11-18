@@ -154,11 +154,11 @@ class _Episode:
     transient_pending: set[str] = field(default_factory=set)
 
 
-ENV_PARAM_NAMES: tuple[str, ...] = ("flaky_p",)
+ENV_PARAM_NAMES: tuple[str, ...] = ("flaky_p", "strict_args")
 """Keyword arguments of ``LabStockEnv`` that a run config may set through ``env_params``."""
 
 
-def validate_env_params(params: dict[str, Any]) -> dict[str, float]:
+def validate_env_params(params: dict[str, Any]) -> dict[str, Any]:
     """Check run-config environment parameters and return them as a fresh dict.
 
     Args:
@@ -168,13 +168,18 @@ def validate_env_params(params: dict[str, Any]) -> dict[str, float]:
         The validated parameters, ready for ``LabStockEnv(**params)``.
 
     Raises:
-        ValueError: On an unknown name or a value outside its range.
+        ValueError: On an unknown name, a value of the wrong type, or a value outside its range.
     """
     unknown = sorted(set(params) - set(ENV_PARAM_NAMES))
     if unknown:
         raise ValueError(f"unknown labstock env_params {unknown}; allowed {list(ENV_PARAM_NAMES)}")
-    checked: dict[str, float] = {}
+    checked: dict[str, Any] = {}
     for name, value in params.items():
+        if name == "strict_args":
+            if not isinstance(value, bool):
+                raise ValueError(f"env_params.strict_args must be true or false, got {value!r}")
+            checked[name] = value
+            continue
         if not _is_number(value):
             raise ValueError(f"env_params.{name} must be a number, got {value!r}")
         if name == "flaky_p" and not 0.0 <= float(value) <= 1.0:
@@ -188,11 +193,14 @@ class LabStockEnv(BaseEnv):
 
     name = "labstock"
 
-    def __init__(self, flaky_p: float = 0.0) -> None:
+    def __init__(self, flaky_p: float = 0.0, strict_args: bool = False) -> None:
         """Create the environment.
 
         Args:
             flaky_p: Probability that a tool call fails transiently (seeded per episode).
+            strict_args: False (default) drops argument names the tool does not declare, the way
+                the MCP server always has. True rejects them with ``invalid arguments``. Both
+                transports follow the same setting.
 
         Raises:
             ValueError: If ``flaky_p`` is outside [0, 1].
@@ -201,6 +209,7 @@ class LabStockEnv(BaseEnv):
         if not 0.0 <= flaky_p <= 1.0:
             raise ValueError(f"flaky_p must be in [0, 1], got {flaky_p}")
         self._flaky_p = flaky_p
+        self._strict_args = strict_args
         self._episodes: dict[str, _Episode] = {}
 
     def reset(self, task: Task, seed: int) -> str:
@@ -241,6 +250,14 @@ class LabStockEnv(BaseEnv):
         episode = self._episode(handle)
         if call.name not in TOOL_NAMES:
             return _error(call, f"unknown tool {call.name!r}")
+        if not self._strict_args:
+            # Lenient (default): undeclared names are dropped before the check, as the MCP layer
+            # does. Strict: they stay in and _check_arguments rejects them.
+            call = ToolCall(
+                call_id=call.call_id,
+                name=call.name,
+                arguments=_declared_arguments(_PARAMETERS[call.name], call.arguments),
+            )
         problem = _check_arguments(_PARAMETERS[call.name], call.arguments)
         if problem is not None:
             return _error(call, f"invalid arguments: {problem}")
@@ -521,6 +538,12 @@ def _read_approvals(raw: Any, compounds: dict[str, _Compound], where: str) -> li
             _Approval(str(item["compound_id"]), str(item["reason"]), str(item["status"]))
         )
     return approvals
+
+
+def _declared_arguments(parameters: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
+    """Return the arguments whose names the tool declares. Other names are dropped."""
+    properties = parameters["properties"]
+    return {key: value for key, value in arguments.items() if key in properties}
 
 
 def _check_arguments(parameters: dict[str, Any], arguments: dict[str, Any]) -> str | None:

@@ -25,7 +25,7 @@ from typing import Annotated, Any
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from pydantic import WithJsonSchema
+from pydantic import ConfigDict, WithJsonSchema
 
 from passk.schema import Env, Task, ToolCall, ToolResult, ToolSpec
 
@@ -43,13 +43,18 @@ _HANDLE_SCHEMA: dict[str, Any] = {
 }
 
 
-def build_server(env: Env, tasks: Sequence[Task], server_name: str = "passk") -> MCPServer:
+def build_server(
+    env: Env, tasks: Sequence[Task], server_name: str = "passk", *, strict_args: bool = False
+) -> MCPServer:
     """Create an ``MCPServer`` whose tools wrap ``env`` and the given tasks.
 
     Args:
         env: Environment to serve. Any object implementing the ``Env`` protocol.
         tasks: Tasks that ``episode_reset`` may start, looked up by ``id``.
         server_name: Name reported to MCP clients.
+        strict_args: False (default) keeps the MCP layer's behaviour of dropping argument names a
+            tool does not declare. True makes those names an error, as in process with
+            ``LabStockEnv(strict_args=True)``. Control tools are not affected.
 
     Returns:
         A configured server. Not started.
@@ -78,7 +83,7 @@ def build_server(env: Env, tasks: Sequence[Task], server_name: str = "passk") ->
     lock = threading.Lock()
 
     for spec in specs:
-        _register_env_tool(mcp, env, lock, spec)
+        _register_env_tool(mcp, env, lock, spec, strict_args=strict_args)
 
     @mcp.tool(
         name=RESET_TOOL,
@@ -114,7 +119,9 @@ def build_server(env: Env, tasks: Sequence[Task], server_name: str = "passk") ->
     return mcp
 
 
-def _register_env_tool(mcp: MCPServer, env: Env, lock: threading.Lock, spec: ToolSpec) -> None:
+def _register_env_tool(
+    mcp: MCPServer, env: Env, lock: threading.Lock, spec: ToolSpec, *, strict_args: bool = False
+) -> None:
     """Register one ``Env`` tool on ``mcp`` with a signature built from its JSON Schema.
 
     Args:
@@ -176,6 +183,24 @@ def _register_env_tool(mcp: MCPServer, env: Env, lock: threading.Lock, spec: Too
         description=spec.description,
         meta={META_KEY: {"parameters": spec.parameters}},
     )
+    if strict_args:
+        tool = mcp._tool_manager.get_tool(spec.name)
+        if tool is None:  # pragma: no cover - add_tool just registered it
+            raise RuntimeError(f"tool {spec.name!r} was not registered")
+        tool.fn_metadata.arg_model = _forbid_extra_arguments(tool.fn_metadata.arg_model)
+
+
+def _forbid_extra_arguments(model: Any) -> Any:  # the SDK's ArgModelBase subclass
+    """Return a subclass of an MCP argument model that rejects undeclared argument names.
+
+    The SDK builds these models with the default ``extra="ignore"``, so an undeclared name is
+    dropped before the tool runs. Strict mode needs the name to reach the tool and fail there.
+    """
+
+    class _Strict(model):
+        model_config = ConfigDict(extra="forbid")
+
+    return _Strict
 
 
 def _is_keyword(name: str) -> bool:
@@ -183,7 +208,9 @@ def _is_keyword(name: str) -> bool:
     return keyword.iskeyword(name)
 
 
-def serve_stdio(env: Env, tasks: Sequence[Task], server_name: str = "passk") -> None:
+def serve_stdio(
+    env: Env, tasks: Sequence[Task], server_name: str = "passk", *, strict_args: bool = False
+) -> None:
     """Run a server for ``env`` on stdio until the client disconnects.
 
     Args:
@@ -191,7 +218,7 @@ def serve_stdio(env: Env, tasks: Sequence[Task], server_name: str = "passk") -> 
         tasks: Tasks that ``episode_reset`` may start.
         server_name: Name reported to MCP clients.
     """
-    build_server(env, tasks, server_name).run("stdio")
+    build_server(env, tasks, server_name, strict_args=strict_args).run("stdio")
 
 
 def serve_labstock_stdio(
@@ -210,8 +237,11 @@ def serve_labstock_stdio(
     from passk.envs.labstock import LabStockEnv, validate_env_params
 
     tasks = load_tasks(tasks_glob)
-    env = LabStockEnv(**validate_env_params(dict(env_params or {})))
-    serve_stdio(env, tasks, server_name="passk-labstock")
+    params = validate_env_params(dict(env_params or {}))
+    env = LabStockEnv(**params)
+    serve_stdio(
+        env, tasks, server_name="passk-labstock", strict_args=bool(params.get("strict_args", False))
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

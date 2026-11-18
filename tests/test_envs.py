@@ -146,7 +146,6 @@ def test_place_order_success_updates_stock_budget_and_orders() -> None:
         {"compound_id": "C07", "grams": "5"},
         {"compound_id": "C07", "grams": True},
         {"grams": 5},
-        {"compound_id": "C07", "grams": 5, "extra": 1},
         {"compound_id": 7, "grams": 5},
     ],
 )
