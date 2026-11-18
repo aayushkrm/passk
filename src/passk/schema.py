@@ -189,7 +189,7 @@ class AgentConfig(BaseModel):
         params: Constructor parameters for that implementation.
     """
 
-    kind: Literal["oracle", "noisy_oracle", "llamacpp", "replay"]
+    kind: Literal["oracle", "noisy_oracle", "llamacpp", "replay", "openai_compat"]
     params: dict[str, Any] = Field(default_factory=dict)
 
 
