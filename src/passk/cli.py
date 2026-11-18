@@ -39,6 +39,24 @@ class CliError(Exception):
     """A usage or runtime error that should exit with code 2."""
 
 
+def _incomplete_message(exc: runner.RunIncomplete) -> str:
+    """Explain a stopped run: what was kept, how to continue, and when the quota resets."""
+    kept = exc.report.episodes_done
+    if kept is None:
+        kept = sum(stats.n for stats in exc.report.tasks)
+    total = exc.report.episodes_total
+    progress = f"{kept} of {total}" if total is not None else f"{kept}"
+    where = f" in {exc.run_dir}" if exc.run_dir is not None else ""
+    parts = [
+        f"run stopped before it finished: {exc.reason}.",
+        f"{progress} episodes are kept{where}; a partial report (complete: false) was written.",
+    ]
+    if exc.reset_at is not None:
+        parts.append(f"The provider limit resets at {exc.reset_at} (UTC).")
+    parts.append("Re-run the same command to continue from the kept episodes.")
+    return " ".join(parts)
+
+
 def _error(json_output: bool, message: str) -> int:
     if json_output:
         typer.echo(json.dumps({"error": message, "exit_code": 2}, indent=2))
@@ -118,8 +136,23 @@ def run_cmd(
         str,
         typer.Option("--out", help="Directory that receives <run_id>/. Default: runs."),
     ] = "runs",
+    resume: Annotated[
+        bool | None,
+        typer.Option(
+            "--resume/--no-resume",
+            help=(
+                "Continue an interrupted run of the same configuration. Default: resume when "
+                "the configuration matches; --no-resume refuses an existing run."
+            ),
+        ),
+    ] = None,
 ) -> None:
-    """Run tasks x trials for one configuration and write <out>/<run_id>/."""
+    """Run tasks x trials for one configuration and write <out>/<run_id>/.
+
+    Each finished episode is saved as it ends. If the run stops (for example on a provider
+    quota), the finished episodes are kept and a partial report is written; re-running the same
+    command later continues it.
+    """
 
     def body() -> int:
         run_config = _load_run_config(Path(config))
@@ -137,7 +170,10 @@ def run_cmd(
             run_config = run_config.model_copy(
                 update={"n_trials": 1, "run_id": f"{run_config.run_id}-smoke"}
             )
-        report = runner.run(run_config, out_root=Path(out), deps=deps)
+        try:
+            report = runner.run(run_config, out_root=Path(out), deps=deps, resume=resume)
+        except runner.RunIncomplete as exc:
+            raise CliError(_incomplete_message(exc)) from exc
         if json_output:
             _emit_json(report.model_dump(mode="json"))
             return 0
@@ -216,6 +252,12 @@ def diff_cmd(
             return 0
         if result["synthetic"]:
             typer.echo(f"{DEMO_LABEL}: at least one run is synthetic")
+        for side, report in (("baseline", report_a), ("candidate", report_b)):
+            if not report.complete:
+                typer.echo(
+                    f"PARTIAL: the {side} run {report.run_id} is incomplete "
+                    f"({report.stop_reason}); its numbers cover finished episodes only"
+                )
         typer.echo(
             f"baseline {result['baseline']['run_id']} -> candidate {result['candidate']['run_id']}"
             f" at k={result['k']}"
@@ -283,6 +325,12 @@ def gate_cmd(
         gate_policy: GatePolicy = load_policy(Path(policy))
         baseline = load_report(Path(a))
         candidate = load_report(Path(b))
+        for side, report in (("baseline", baseline), ("candidate", candidate)):
+            if not report.complete:
+                raise CliError(
+                    f"refusing to gate an incomplete {side} report ({report.run_id}): "
+                    f"{report.stop_reason}"
+                )
         decision = gate(baseline, candidate, gate_policy)
         synthetic = any(r.env_info.get("synthetic") is True for r in (baseline, candidate))
         if json_output:

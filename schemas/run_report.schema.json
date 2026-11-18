@@ -144,8 +144,13 @@
       "type": "object"
     }
   },
-  "description": "Top-level report written to ``runs/<run_id>/report.json``.\n\nAttributes:\n    schema_version: Version of this report schema. Always ``\"1\"`` in v0.1.\n    run_id: Run identifier.\n    config: The configuration that produced the report.\n    env_info: Environment record (see ``scripts/envinfo.py``).\n    tasks: Per-task statistics.\n    summary: Metric name -> k -> ``{\"mean\", \"ci_low\", \"ci_high\"}``.\n    failure_totals: Failure category name -> count across all trials.\n    tokens: Token usage totals and medians.\n    wall_s: Total wall time of the run, in seconds.",
+  "description": "Top-level report written to ``runs/<run_id>/report.json``.\n\nAttributes:\n    schema_version: Version of this report schema. Always ``\"1\"`` in v0.1.\n    run_id: Run identifier.\n    config: The configuration that produced the report.\n    env_info: Environment record (see ``scripts/envinfo.py``).\n    tasks: Per-task statistics.\n    summary: Metric name -> k -> ``{\"mean\", \"ci_low\", \"ci_high\"}``.\n    failure_totals: Failure category name -> count of unsuccessful trials.\n    tokens: Token usage totals and medians.\n    wall_s: Total wall time of the run, in seconds.\n    complete: False when the run stopped before every episode finished (for example a\n        provider quota). A partial report holds the finished episodes only and must not\n        be read as a full result.\n    stop_reason: Why the run stopped, when ``complete`` is False.\n    reset_at: UTC time (ISO 8601) when the provider's limit resets, if it said so.\n    episodes_total: Episodes the configuration asks for (tasks x trials).\n    episodes_done: Episodes that finished and are in this report.",
   "properties": {
+    "complete": {
+      "default": true,
+      "title": "Complete",
+      "type": "boolean"
+    },
     "config": {
       "$ref": "#/$defs/RunConfig"
     },
@@ -154,12 +159,48 @@
       "title": "Env Info",
       "type": "object"
     },
+    "episodes_done": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Episodes Done"
+    },
+    "episodes_total": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Episodes Total"
+    },
     "failure_totals": {
       "additionalProperties": {
         "type": "integer"
       },
       "title": "Failure Totals",
       "type": "object"
+    },
+    "reset_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reset At"
     },
     "run_id": {
       "title": "Run Id",
@@ -170,6 +211,18 @@
       "default": "1",
       "title": "Schema Version",
       "type": "string"
+    },
+    "stop_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stop Reason"
     },
     "summary": {
       "additionalProperties": {

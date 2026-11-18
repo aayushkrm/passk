@@ -36,7 +36,7 @@ from typing import Any
 from passk import metrics, taxonomy, trace
 from passk.agents._common import SCHEMA_ERROR_TOOL, schema_error_result
 from passk.agents.llamacpp import LlamaCppAgent
-from passk.agents.openai_compat import OpenAICompatAgent
+from passk.agents.openai_compat import OpenAICompatAgent, ProviderError
 from passk.schema import (
     Agent,
     AgentAction,
@@ -401,6 +401,155 @@ def _atomic_write_text(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+PERSIST_FORMAT = "passk-run-state-1"
+STATE_FILENAME = "state.json"
+TRAJECTORIES_FILENAME = "trajectories.jsonl"
+SPANS_FILENAME = "spans.jsonl"
+
+
+class ConfigMismatchError(ValueError):
+    """The run directory holds a run of a different configuration. Nothing is changed."""
+
+
+class RunIncomplete(RuntimeError):
+    """The run stopped before every episode finished. Finished episodes stay on disk.
+
+    Attributes:
+        report: The partial report, with ``complete`` False.
+        reason: Why the run stopped (for example the provider's quota error).
+        reset_at: UTC time when the provider's limit resets, if the provider said so.
+        run_dir: The run directory, or None when the run wrote nothing.
+    """
+
+    def __init__(
+        self, report: RunReport, reason: str, reset_at: str | None, run_dir: Path | None
+    ) -> None:
+        """Create the exception. See the class attributes."""
+        super().__init__(reason)
+        self.report = report
+        self.reason = reason
+        self.reset_at = reset_at
+        self.run_dir = run_dir
+
+
+def config_hash(config: RunConfig, task_ids: Sequence[str]) -> str:
+    """Return the SHA-256 that identifies a run's configuration and task set.
+
+    The task glob is stored portably, so the hash does not depend on the checkout location.
+
+    Args:
+        config: Run configuration.
+        task_ids: Ids of the tasks the run covers, in any order.
+
+    Returns:
+        A 64-character hex digest.
+    """
+    data = config.model_dump(mode="json")
+    data["tasks_glob"] = portable_glob(config.tasks_glob)
+    data["task_ids"] = sorted(task_ids)
+    text = json.dumps(data, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _read_state(run_dir: Path) -> dict[str, Any] | None:
+    path = run_dir / STATE_FILENAME
+    if not path.is_file():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or data.get("schema") != PERSIST_FORMAT:
+        raise ValueError(f"{path} is not a passk run state file")
+    return data
+
+
+def _write_state(
+    run_dir: Path,
+    *,
+    config: RunConfig,
+    digest: str,
+    status: str,
+    episodes_total: int,
+    episodes_done: int,
+    reason: str | None = None,
+    reset_at: str | None = None,
+) -> None:
+    state = {
+        "schema": PERSIST_FORMAT,
+        "run_id": config.run_id,
+        "config_hash": digest,
+        "status": status,
+        "episodes_total": episodes_total,
+        "episodes_done": episodes_done,
+        "reason": reason,
+        "reset_at": reset_at,
+    }
+    _atomic_write_text(run_dir / STATE_FILENAME, json.dumps(state, indent=2, sort_keys=True) + "\n")
+
+
+def _drop_partial_tail(path: Path) -> bytes:
+    """Cut an incomplete last line (a write interrupted by a crash) and return the complete text.
+
+    Only bytes after the last newline are removed. Every complete line is kept.
+    """
+    if not path.is_file():
+        return b""
+    raw = path.read_bytes()
+    keep = raw.rfind(b"\n") + 1
+    if keep != len(raw):
+        with path.open("r+b") as handle:
+            handle.truncate(keep)
+        raw = raw[:keep]
+    return raw
+
+
+def _load_prior(
+    run_dir: Path, config: RunConfig, tasks: Sequence[Task]
+) -> tuple[list[Trajectory], set[tuple[str, int]]]:
+    """Read the finished episodes of an interrupted run, in order, and their (task, trial) keys.
+
+    Raises:
+        ValueError: If a complete line is not a trajectory of this run, or repeats an episode.
+    """
+    raw = _drop_partial_tail(run_dir / TRAJECTORIES_FILENAME)
+    _drop_partial_tail(run_dir / SPANS_FILENAME)
+    valid_tasks = {task.id for task in tasks}
+    trajectories: list[Trajectory] = []
+    done: set[tuple[str, int]] = set()
+    for number, line in enumerate(raw.decode("utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            traj = Trajectory.model_validate_json(line)
+        except ValueError as exc:
+            raise ValueError(f"{run_dir / TRAJECTORIES_FILENAME}:{number}: {exc}") from exc
+        if traj.run_id != config.run_id or traj.task_id not in valid_tasks:
+            raise ValueError(
+                f"{run_dir / TRAJECTORIES_FILENAME}:{number}: not an episode of this run"
+            )
+        if not 0 <= traj.trial < config.n_trials:
+            raise ValueError(f"{run_dir / TRAJECTORIES_FILENAME}:{number}: trial out of range")
+        key = (traj.task_id, traj.trial)
+        if key in done:
+            raise ValueError(f"{run_dir / TRAJECTORIES_FILENAME}:{number}: repeated episode {key}")
+        done.add(key)
+        trajectories.append(traj)
+    return trajectories, done
+
+
+class _Appender:
+    """Append-only JSONL file. Each write is flushed and fsynced before the call returns."""
+
+    def __init__(self, path: Path) -> None:
+        self._handle = path.open("a", encoding="utf-8")
+
+    def write(self, text: str) -> None:
+        self._handle.write(text)
+        self._handle.flush()
+        os.fsync(self._handle.fileno())
+
+    def close(self) -> None:
+        self._handle.close()
+
+
 def run(
     config: RunConfig,
     out_root: Path = Path("runs"),
@@ -408,14 +557,23 @@ def run(
     deps: RunDeps | None = None,
     write: bool = True,
     light: bool = False,
+    resume: bool | None = None,
 ) -> RunReport:
     """Run every task matching ``config.tasks_glob`` for ``config.n_trials`` trials.
 
-    Tasks are sorted by id. Episodes run in order: task, then trial. Enforces
-    ``Task.max_turns``, writes the run directory and returns the report.
+    Tasks are sorted by id. Episodes run in order: task, then trial. Each finished episode is
+    appended to ``trajectories.jsonl`` (and its spans to ``spans.jsonl``) and fsynced before the
+    next one starts, so an interrupted run keeps what it finished. ``state.json`` records the
+    configuration hash and the progress.
 
-    Provider errors (``ProviderError``) propagate and abort the run without writing anything,
-    because an outage is not a model failure.
+    Resume: if ``run_dir`` holds a run of the same configuration and task set, its finished
+    episodes are kept and only the rest run. A different configuration is refused. A run that
+    is already complete is refused. ``resume=False`` refuses any existing run; ``resume=True``
+    requires one.
+
+    A provider error (``ProviderError``) ends the run cleanly. The finished episodes are kept, a
+    partial report with ``complete`` False is written, and ``RunIncomplete`` is raised. Any
+    other exception (a crash) propagates; the files already written stay valid for a resume.
 
     Args:
         config: Run configuration.
@@ -424,13 +582,19 @@ def run(
         write: If False, nothing is written and the run directory is not checked.
         light: If True, skip the spans, the environment record and the summary bootstrap.
             The per-task statistics are still computed. Used by ``passk validate``.
+        resume: None (default) resumes a matching interrupted run and starts a new one
+            otherwise. True requires an existing run. False refuses an existing run.
 
     Returns:
         The aggregated ``RunReport`` (also written to ``report.json`` when ``write``).
 
     Raises:
-        ValueError: On an invalid run id, ``n_trials < 1`` or no matching tasks.
-        FileExistsError: If the run directory already holds files.
+        ValueError: On an invalid run id, ``n_trials < 1``, no matching tasks, or a state
+            file that does not match this configuration's task set.
+        ConfigMismatchError: If the run directory holds a run of a different configuration.
+        FileExistsError: If the run directory holds files that are not a resumable run, or a
+            complete run, or ``resume`` is False.
+        RunIncomplete: If a provider error stopped the run.
     """
     deps = deps or RunDeps()
     if config.n_trials < 1:
@@ -438,8 +602,6 @@ def run(
     if not RUN_ID_PATTERN.fullmatch(config.run_id):
         raise ValueError(f"run_id {config.run_id!r} must be a plain name (letters, digits, ._-)")
     run_dir = Path(out_root) / config.run_id
-    if write and run_dir.exists() and any(run_dir.iterdir()):
-        raise FileExistsError(f"{run_dir} already holds files; choose a new run_id")
 
     if deps.tasks is not None:
         tasks = sorted(deps.tasks, key=lambda t: t.id)
@@ -449,6 +611,44 @@ def run(
         tasks = load_tasks(config.tasks_glob)
     if not tasks:
         raise ValueError(f"no tasks match {config.tasks_glob!r}")
+    digest = config_hash(config, [task.id for task in tasks])
+    episodes_total = len(tasks) * config.n_trials
+
+    prior: list[Trajectory] = []
+    done: set[tuple[str, int]] = set()
+    if write:
+        state = _read_state(run_dir)
+        if state is None:
+            if resume is True:
+                raise ValueError(f"nothing to resume in {run_dir}")
+            if run_dir.exists() and any(run_dir.iterdir()):
+                raise FileExistsError(f"{run_dir} already holds files; choose a new run_id")
+            run_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            if state.get("config_hash") != digest:
+                raise ConfigMismatchError(
+                    f"{run_dir} holds a run of a different configuration (its hash "
+                    f"{str(state.get('config_hash'))[:12]} differs from {digest[:12]}); "
+                    "choose a new run_id"
+                )
+            if state.get("status") == "complete":
+                raise FileExistsError(
+                    f"{run_dir} already holds a complete run; choose a new run_id"
+                )
+            if resume is False:
+                raise FileExistsError(
+                    f"{run_dir} already holds an interrupted run; re-run with --resume "
+                    "(the default for a matching configuration) or choose a new run_id"
+                )
+            prior, done = _load_prior(run_dir, config, tasks)
+        _write_state(
+            run_dir,
+            config=config,
+            digest=digest,
+            status="running",
+            episodes_total=episodes_total,
+            episodes_done=len(prior),
+        )
 
     make_agent = deps.make_agent or build_agent
     make_transport = deps.make_transport or build_transport
@@ -461,46 +661,74 @@ def run(
     model = _model_name(agent, config.agent)
     provider = _provider(agent)
     transport = make_transport(config)
-    trajectories: list[Trajectory] = []
-    span_records: list[dict[str, Any]] = []
+    traj_log = _Appender(run_dir / TRAJECTORIES_FILENAME) if write else None
+    span_log = _Appender(run_dir / SPANS_FILENAME) if write and not light else None
+    trajectories: list[Trajectory] = list(prior)
+    stop: ProviderError | None = None
     try:
         # The tool list does not change between episodes, so it is fetched once per run.
         tool_listing = transport.tools()
         for task in tasks:
             for trial in range(config.n_trials):
-                traj, tool_latencies = _run_episode(
-                    config,
-                    task,
-                    trial,
-                    agent,
-                    transport,
-                    agent_id,
-                    goal_checker,
-                    classifier,
-                    tools=tool_listing,
-                )
-                trajectories.append(traj)
-                if not light:
-                    span_records.extend(
-                        trace.build_spans(
-                            traj,
-                            request_model=model,
-                            provider_name=provider,
-                            tool_latencies_s=tool_latencies,
-                        )
+                if (task.id, trial) in done:
+                    continue
+                try:
+                    traj, tool_latencies = _run_episode(
+                        config,
+                        task,
+                        trial,
+                        agent,
+                        transport,
+                        agent_id,
+                        goal_checker,
+                        classifier,
+                        tools=tool_listing,
                     )
+                except ProviderError as exc:
+                    stop = exc  # the unfinished episode is discarded and rerun on resume
+                    break
+                trajectories.append(traj)
+                if traj_log is not None:
+                    traj_log.write(traj.model_dump_json() + "\n")
+                if span_log is not None:
+                    for span in trace.build_spans(
+                        traj,
+                        request_model=model,
+                        provider_name=provider,
+                        tool_latencies_s=tool_latencies,
+                    ):
+                        span_log.write(json.dumps(span, sort_keys=True) + "\n")
+                if write:
+                    _write_state(
+                        run_dir,
+                        config=config,
+                        digest=digest,
+                        status="running",
+                        episodes_total=episodes_total,
+                        episodes_done=len(trajectories),
+                    )
+            if stop is not None:
+                break
     finally:
         close = getattr(transport, "close", None)
         if callable(close):
             close()
+        if traj_log is not None:
+            traj_log.close()
+        if span_log is not None:
+            span_log.close()
 
+    complete = stop is None
+    started_tasks = [t for t in tasks if any(tr.task_id == t.id for tr in trajectories)]
     stats, summary, failure_totals, tokens = _aggregate(
-        config, trajectories, tasks, bootstrap=not light
+        config, trajectories, started_tasks, bootstrap=not light
     )
     env_info = {} if light else environment_record()
     if config.agent.kind in SCRIPTED_CLASSES:
         # Scripted agents are not models. Every report built from them is labelled SYNTHETIC.
         env_info["synthetic"] = True
+    if prior:
+        env_info["resumed_from_episodes"] = len(prior)
     agent_meta = getattr(agent, "metadata", None)
     if isinstance(agent_meta, dict):
         env_info["agent"] = agent_meta
@@ -514,18 +742,30 @@ def run(
         failure_totals=failure_totals,
         tokens=tokens,
         wall_s=time.perf_counter() - started,
+        complete=complete,
+        stop_reason=None if complete or stop is None else str(stop),
+        reset_at=None if complete or stop is None else stop.reset_at,
+        episodes_total=episodes_total,
+        episodes_done=len(trajectories),
     )
 
-    if not write:
-        return report
-    run_dir.mkdir(parents=True, exist_ok=True)
-    _atomic_write_text(
-        run_dir / "trajectories.jsonl",
-        "".join(t.model_dump_json() + "\n" for t in trajectories),
-    )
-    with trace.SpanWriter(run_dir / "spans.jsonl") as writer:
-        for span in span_records:
-            writer.write(span)
-    _atomic_write_text(run_dir / "env.json", json.dumps(env_info, indent=2, sort_keys=True) + "\n")
-    _atomic_write_text(run_dir / "report.json", report.model_dump_json(indent=2) + "\n")
+    if write:
+        _atomic_write_text(
+            run_dir / "env.json", json.dumps(env_info, indent=2, sort_keys=True) + "\n"
+        )
+        _atomic_write_text(run_dir / "report.json", report.model_dump_json(indent=2) + "\n")
+        _write_state(
+            run_dir,
+            config=config,
+            digest=digest,
+            status="complete" if complete else "partial",
+            episodes_total=episodes_total,
+            episodes_done=len(trajectories),
+            reason=report.stop_reason,
+            reset_at=report.reset_at,
+        )
+    if not complete:
+        raise RunIncomplete(
+            report, report.stop_reason or "", report.reset_at, run_dir if write else None
+        )
     return report

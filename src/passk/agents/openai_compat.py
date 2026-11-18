@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from passk.agents._common import (
@@ -41,7 +42,80 @@ class ProviderError(RuntimeError):
 
     Raised out of ``act`` and therefore out of the run. It is not recorded as a model failure,
     because a provider outage says nothing about the agent.
+
+    Attributes:
+        reset_at: UTC time (ISO 8601) when the limit resets, from the rate-limit headers, or
+            None when the provider did not say.
+        quota: True when the provider reported an exhausted quota (not a short burst limit).
+            A quota stop is not retried.
     """
+
+    def __init__(self, message: str, *, reset_at: str | None = None, quota: bool = False) -> None:
+        """Create the error.
+
+        Args:
+            message: Key-free description of the failure.
+            reset_at: See the class attributes.
+            quota: See the class attributes.
+        """
+        super().__init__(message)
+        self.reset_at = reset_at
+        self.quota = quota
+
+
+def reset_time(headers: Mapping[str, str], now: float) -> tuple[str | None, float | None]:
+    """Read when a rate limit resets from the response headers.
+
+    ``Retry-After`` (seconds) is used first. Otherwise ``X-RateLimit-Reset`` (or
+    ``RateLimit-Reset``) is read as epoch milliseconds, epoch seconds or seconds from now.
+
+    Args:
+        headers: Response headers, in any letter case.
+        now: Current wall-clock time in epoch seconds.
+
+    Returns:
+        ``(reset_at, seconds_until_reset)``, or ``(None, None)`` when no header is usable.
+    """
+    lowered = {str(k).lower(): str(v) for k, v in headers.items()}
+    seconds: float | None = None
+    retry = lowered.get("retry-after")
+    if retry is not None:
+        try:
+            value = float(retry)
+        except ValueError:
+            value = -1.0
+        if value >= 0:
+            seconds = value
+    if seconds is None:
+        raw = lowered.get("x-ratelimit-reset", lowered.get("ratelimit-reset"))
+        if raw is not None:
+            try:
+                number: float | None = float(raw)
+            except ValueError:
+                number = None
+            if number is not None and number >= 0:
+                if number > 1e12:  # epoch milliseconds
+                    number /= 1000.0
+                if number > 1e9:  # epoch seconds
+                    seconds = max(0.0, number - now)
+                else:  # seconds from now
+                    seconds = number
+    if seconds is None:
+        return None, None
+    reset = datetime.fromtimestamp(now + seconds, tz=UTC).isoformat(timespec="seconds")
+    return reset, seconds
+
+
+def _is_quota_exhausted(headers: Mapping[str, str], seconds: float | None) -> bool:
+    """True when a 429 means the account quota is used up, not a short burst limit.
+
+    The provider says so with ``X-RateLimit-Remaining: 0``, or with a reset more than
+    ``MAX_RETRY_AFTER_S`` away, which is far longer than any backoff the agent would wait.
+    """
+    lowered = {str(k).lower(): str(v) for k, v in headers.items()}
+    if lowered.get("x-ratelimit-remaining") == "0":
+        return True
+    return seconds is not None and seconds > MAX_RETRY_AFTER_S
 
 
 @dataclass(frozen=True)
@@ -130,6 +204,7 @@ class OpenAICompatAgent:
         post: PostFn | None = None,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         """Configure the agent. Reads the API key from the environment.
 
@@ -179,6 +254,7 @@ class OpenAICompatAgent:
         self._post: PostFn = post if post is not None else urllib_post
         self._sleep = sleep
         self._clock = clock
+        self._wall_clock = wall_clock
         self._episode_seed = seed
         self._last_sent: float | None = None
 
@@ -327,14 +403,25 @@ class OpenAICompatAgent:
                 continue
             if 200 <= response.status < 300:
                 return self._parse_body(response.body)
+            reset_at, seconds = reset_time(response.headers, self._wall_clock())
+            if response.status == 429 and _is_quota_exhausted(response.headers, seconds):
+                limit = {k.lower(): v for k, v in response.headers.items()}.get("x-ratelimit-limit")
+                detail = f" (limit {limit})" if limit else ""
+                raise ProviderError(
+                    f"provider returned HTTP 429: account quota exhausted{detail}",
+                    reset_at=reset_at,
+                    quota=True,
+                ) from None
             if not _is_retryable(response.status):
                 detail = self._provider_message(response.body)
                 raise ProviderError(
-                    f"provider returned HTTP {response.status}" + (f": {detail}" if detail else "")
+                    f"provider returned HTTP {response.status}" + (f": {detail}" if detail else ""),
+                    reset_at=reset_at,
                 ) from None
             if attempt >= self.max_retries:
                 raise ProviderError(
-                    f"provider returned HTTP {response.status} after {attempt + 1} attempt(s)"
+                    f"provider returned HTTP {response.status} after {attempt + 1} attempt(s)",
+                    reset_at=reset_at,
                 ) from None
             self._sleep(self._backoff(attempt, response.headers.get("retry-after")))
             attempt += 1

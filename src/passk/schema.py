@@ -255,9 +255,16 @@ class RunReport(BaseModel):
         env_info: Environment record (see ``scripts/envinfo.py``).
         tasks: Per-task statistics.
         summary: Metric name -> k -> ``{"mean", "ci_low", "ci_high"}``.
-        failure_totals: Failure category name -> count across all trials.
+        failure_totals: Failure category name -> count of unsuccessful trials.
         tokens: Token usage totals and medians.
         wall_s: Total wall time of the run, in seconds.
+        complete: False when the run stopped before every episode finished (for example a
+            provider quota). A partial report holds the finished episodes only and must not
+            be read as a full result.
+        stop_reason: Why the run stopped, when ``complete`` is False.
+        reset_at: UTC time (ISO 8601) when the provider's limit resets, if it said so.
+        episodes_total: Episodes the configuration asks for (tasks x trials).
+        episodes_done: Episodes that finished and are in this report.
     """
 
     schema_version: Literal["1"] = "1"
@@ -269,6 +276,11 @@ class RunReport(BaseModel):
     failure_totals: dict[str, int]
     tokens: dict[str, Any]
     wall_s: float
+    complete: bool = True
+    stop_reason: str | None = None
+    reset_at: str | None = None
+    episodes_total: int | None = None
+    episodes_done: int | None = None
 
 
 class GatePolicy(BaseModel):
