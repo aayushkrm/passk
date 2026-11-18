@@ -135,10 +135,13 @@ class Task(BaseModel):
 class FailureCategory(StrEnum):
     """Primary failure label for a trajectory.
 
-    Members are listed in precedence order. The taxonomy assigns the first category
-    whose condition holds: ``policy_violation`` > ``schema_error`` >
-    ``tool_error_unrecovered`` > ``false_success_claim`` > ``loop`` > ``max_turns`` >
-    ``wrong_state`` > ``success``.
+    The members are listed in the order the taxonomy's rules are documented, not in the
+    order they are checked. ``passk.taxonomy.classify`` checks in this order: any recorded
+    violation gives ``policy_violation``; otherwise a met goal gives ``success``; otherwise
+    the first of ``schema_error``, ``tool_error_unrecovered``, ``false_success_claim``,
+    ``loop``, ``max_turns`` and ``wrong_state`` that holds. ``success`` is checked before
+    the failure rules, so a passing episode with a recovered error is ``success``.
+    See ``docs/design.md`` for why the schema-error and tool-error rules differ.
     """
 
     POLICY_VIOLATION = "policy_violation"

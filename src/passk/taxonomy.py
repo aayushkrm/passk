@@ -1,8 +1,9 @@
 """Assign one primary ``FailureCategory`` to a trajectory.
 
-Precedence (first match wins): ``policy_violation`` > ``schema_error`` >
+Checking order (first match wins): ``policy_violation`` > ``success`` > ``schema_error`` >
 ``tool_error_unrecovered`` > ``false_success_claim`` > ``loop`` > ``max_turns`` >
-``wrong_state`` > ``success``.
+``wrong_state``. ``success`` sits second because a met goal with no violation is a pass,
+whatever errors were recovered on the way.
 
 Rules, each evaluated on the data of one episode:
 
