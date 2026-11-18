@@ -95,8 +95,12 @@ produced by a run made after this commit, with the seeds below.
 - **Status:** runnable since amendment 1 below. It runs only after E3 and E5. It is a stretch:
   if time is short it is reported as not run.
 
-## E7. Hosted free model arm (descriptive, model)
+## E7. Hosted free model arm (descriptive, optional, quota-limited)
 
+- **Status (amendment 2):** optional and quota-limited. The free tier allows 50 model requests
+  per day per account. A full run at the size below needs more than that, so it may not finish
+  in one day. If it does not finish, the run is reported as partial (`complete: false`) with
+  the episodes it finished. A partial result is never presented as a full one.
 - **Config:** `configs/e7_hosted_nemotron.yaml`. Model `nvidia/nemotron-3-ultra-550b-a55b:free`
   via OpenRouter (`openai_compat` agent), T = 0.7, 3 trials per task, `min_interval_s` = 3.
 - **Key:** read from the `OPENROUTER_API_KEY` environment variable. It is never written to a
@@ -145,3 +149,22 @@ in `docs/deviations.md` (D14 to D20).
    it to the system message. Logged as D19.
 6. **Weights.** The Qwen2.5-1.5B Q4_K_M file is on disk, so the 1.5B arms can run. The 40 s
    timing rule is applied after the 1.5B smoke run, as written above. Logged as D20.
+
+## Amendment 2 (before any E7 result exists)
+
+Recorded after a first E7 attempt. The free-tier account's daily quota (50 model requests per
+day) was used up, the run stopped on a provider quota error, and no episode was written
+(D21). Changes:
+
+1. **E7 is optional and quota-limited.** The full size (24 tasks x 3 trials) may need several
+   days on the free tier. A partial run is reported as `complete: false`, with the number of
+   finished episodes and the provider's reset time. The README states that the hosted arm is
+   implemented and tested, that a one-task live smoke run succeeded, and that its full
+   evaluation needs an account with more than 50 free requests per day.
+2. **Persistence and resume.** Each finished episode is saved as it ends, and an interrupted
+   run continues with `passk run --resume` (the default for a matching configuration). A
+   configuration change is refused. Episode results are unchanged by this: a resumed run
+   produces the same trajectories as an uninterrupted one (tests/test_resume.py). Logged as D22.
+3. **Quota stop.** A provider quota error ends the run with a partial report, exit code 2, and
+   the reset time when the provider gave one. A 429 with an exhausted quota is not retried
+   (`docs/deviations.md`, D22).

@@ -54,7 +54,10 @@ section. Read it before drawing a conclusion from any number.
 - **Quantisation.** Q4_K_M is one quantisation. Other quantisations and the fp16 model may
   behave differently.
 - **Model drift.** A hosted model (E7) can change without notice, and the free tier can be
-  rate limited. Its results carry the date and the provider-reported model id, and they are
+  rate limited.
+- **Hosted quota.** The free tier allows 50 model requests per day per account. The full E7 run
+  (24 tasks x 3 trials) was not completed on that quota (`docs/deviations.md`, D21). E7 is
+  reported as partial if it does not finish. Its results carry the date and the provider-reported model id, and they are
   descriptive only.
 
 ## Missing pieces

@@ -45,7 +45,7 @@ The server follows the 2026-07-28 MCP specification note: there are no sessions.
 | Command | What it does |
 |---|---|
 | `passk demo` | Scripted oracle against a noisy oracle, then a gate. SYNTHETIC. |
-| `passk run -c CONFIG [--smoke] [--out DIR]` | Run tasks x trials for one config and write `DIR/<run_id>/`. `--smoke` runs one or two tasks with n=1. |
+| `passk run -c CONFIG [--smoke] [--out DIR] [--resume\|--no-resume]` | Run tasks x trials for one config and write `DIR/<run_id>/`. Finished episodes are saved as they end. `--smoke` runs one or two tasks with n=1. |
 | `passk report RUN_DIR --format md\|json\|html` | Render a run report. |
 | `passk diff A B` | Per-task pass^k deltas and failure shifts between two runs. |
 | `passk gate A B --policy configs/gate.yaml` | Exit 0 if the candidate passes, 1 if it regresses. |
@@ -95,7 +95,15 @@ Pre-registered in [`docs/prereg.md`](docs/prereg.md) before any result file exis
 | E4 | Does T=0 remove the pass^k gap? | Pending |
 | E5 | Does prompt v2 regress against v1 on the 1.5B model? | Pending |
 | E6 | Recovery from transient failures (stretch) | Not runnable yet (see deviations) |
-| E7 | Hosted free model arm (descriptive) | Pending |
+| E7 | Hosted free model arm (descriptive, optional) | Implemented and tested. A one-task live smoke run succeeded. The full evaluation was not completed (see below). |
+
+## Hosted arm
+
+The hosted arm (`openai_compat` agent, OpenRouter, `nvidia/nemotron-3-ultra-550b-a55b:free`) is implemented and tested: the HTTP layer is covered with a fake post, and a one-task live smoke run succeeded. Its full evaluation, 24 tasks by 3 trials, was **not completed**. The free tier allows 50 model requests per day per account, and that quota ran out during the first attempt. A full evaluation needs an account with more than 50 free requests per day. The E7 row above and `docs/deviations.md` (D21) say the same thing.
+
+## Interrupted and partial runs
+
+Each finished episode is written to disk as it ends. If a run is interrupted, re-running the same command continues it: `passk run --resume` is the default when the configuration matches, and a different configuration is refused. If a provider quota stops a run, the finished episodes are kept, a partial report is written with `complete: false`, and the CLI exits with code 2. The message gives the reset time when the provider sends one. Partial reports are labelled PARTIAL in the site, the markdown report and the results block below, and `passk gate` refuses them.
 
 ## Design
 

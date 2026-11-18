@@ -187,3 +187,43 @@ All of these are recorded in `docs/prereg.md`, Amendment 1.
 
 - The Q4_K_M file is in `~/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/`. The E3 1.5B, E5 and E6
   configs can run. D9 (the 40 s rule) is applied after the 1.5B smoke run, as the prereg says.
+
+## Hosted quota and resumable runs (after the first E7 attempt)
+
+### D21. E7 not completed at the pre-registered size (free-tier quota)
+
+- **What happened.** The first full E7 attempt (`configs/e7_hosted_nemotron.yaml`, 24 tasks x 3
+  trials) stopped on the provider's daily quota: the free tier allows 50 model requests per day
+  per account, and the account had used them up. Nothing was written, because the runner then
+  discarded the partial run on any provider error.
+- **Decision.** E7 stays in the pre-registration as optional and quota-limited. The full size
+  may need more than one day on the free tier. Amendment 2 in `docs/prereg.md` makes a partial
+  E7 report reportable with `complete: false`. E7 was not run again on the day of the failure.
+- **Status.** Not complete. The hosted arm is implemented and tested (mocked tests, and a
+  one-task live smoke run that succeeded). Its full evaluation needs an account with more than
+  50 free requests per day.
+
+### D22. Incremental persistence, resume and the quota stop
+
+- **Change (runner).** Each finished episode is appended to `trajectories.jsonl` and its spans
+  to `spans.jsonl`, and each write is fsynced before the next episode starts. `state.json`
+  records the configuration hash, the status and the progress.
+- **Resume.** `passk run --resume` is the default when the run directory holds a run of the same
+  configuration and task set. Finished `(task, trial)` pairs are skipped. A torn last line (an
+  interrupted write) is cut before the run continues. A different configuration is refused with
+  a clear error. A complete run is not overwritten. `--no-resume` refuses any existing run.
+- **Quota stop.** A provider error (a quota error, or retries used up) ends the run cleanly. The
+  finished episodes are kept, `report.json` is written with `complete: false`, `stop_reason` and
+  `reset_at`, and the CLI exits with code 2. The message gives the reset time when the provider
+  sent one. The episode that was running is discarded and rerun on resume. A crash (not a
+  provider error) is not caught: the files written so far stay valid for a resume.
+- **Hosted agent.** A 429 whose quota is exhausted (`X-RateLimit-Remaining: 0`, or a reset more
+  than 300 s away) is not retried. The reset time is read from `Retry-After` or
+  `X-RateLimit-Reset`.
+- **Renderers and gate.** Partial reports carry a PARTIAL banner in the site, the markdown report
+  and the README results block. `passk gate` refuses an incomplete report with exit code 2.
+  `passk diff` prints a warning.
+- **Schema.** `RunReport` gained `complete`, `stop_reason`, `reset_at`, `episodes_total` and
+  `episodes_done`, all with defaults, so older reports still load.
+- **Effect on results.** None on the existing results, which are calibration output only. The
+  byte-identical resume test covers trajectories and spans.
