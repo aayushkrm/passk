@@ -1,6 +1,6 @@
 UV ?= uv
 
-.PHONY: setup lint fmt type test demo report check-results site release
+.PHONY: setup lint fmt type test demo results report check-results site release dogfood
 
 setup:
 	$(UV) sync --python 3.11 --extra dev
@@ -19,17 +19,32 @@ type:
 test:
 	$(UV) run pytest -m "not model"
 
+# Scripted agents only. Output is labelled SYNTHETIC. Runs in well under 30 s.
 demo:
-	@echo "TODO: 'passk demo' is not implemented yet (work package P-F)"
+	$(UV) run passk demo
 
-report:
-	@echo "TODO: report rendering is not implemented yet (work package P-E)"
+# Derived files from committed results: results/headline.json (no hand-typed numbers).
+results:
+	$(UV) run python scripts/render_readme.py --headline
 
+# Renders the README results block from results/ between the results:start/end markers.
+report: results
+	$(UV) run python scripts/render_readme.py
+
+# Fails when the README block or results/headline.json differ from what results/ implies.
 check-results:
-	@echo "TODO: check-results is not implemented yet (renders README blocks and compares them)"
+	$(UV) run python scripts/render_readme.py --check
 
+# Static Pages site from committed reports. Writes a placeholder when none are committed.
 site:
-	@echo "TODO: site build is not implemented yet (work package P-E); output will go to build/site"
+	$(UV) run passk site --results results --out build/site
 
+# Wheel and sdist into dist/. The wheel must contain the task YAML files and site templates.
 release:
-	@echo "TODO: release packaging is not implemented yet"
+	$(UV) build
+
+# CI dogfooding: validate on a fixed smoke set, and gate on committed fixture reports.
+dogfood:
+	$(UV) run passk validate --smoke
+	$(UV) run passk gate tests/fixtures/report_baseline.json tests/fixtures/report_minor_drop.json --policy configs/gate.yaml
+	! $(UV) run passk gate tests/fixtures/report_baseline.json tests/fixtures/report_regression.json --policy configs/gate.yaml
