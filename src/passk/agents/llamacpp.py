@@ -9,6 +9,7 @@ runs with ``n_gpu_layers=0`` (CPU only).
 
 from __future__ import annotations
 
+import hashlib
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -44,6 +45,21 @@ def _import_llama() -> Callable[..., Any]:
     return Llama
 
 
+def _sha256_of(path: Path) -> str | None:
+    """Return the SHA-256 of a model file, or None when the file is absent.
+
+    The file is read once per agent (about 1 GB for the Q4_K_M models, a few seconds).
+    A missing file is not an error here: the constructor reports it when the model loads.
+    """
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 class LlamaCppAgent:
     """Agent backed by ``llama_cpp.Llama.create_chat_completion`` with a JSON schema.
 
@@ -56,6 +72,7 @@ class LlamaCppAgent:
     def __init__(
         self,
         model_path: Path | str,
+        repo_id: str | None = None,
         n_ctx: int = 4096,
         n_threads: int = 4,
         temperature: float = 0.7,
@@ -80,8 +97,10 @@ class LlamaCppAgent:
         Raises:
             ImportError: If llama-cpp-python is not installed and no factory is given.
         """
-        self.model_path = Path(model_path)
+        self.model_path = Path(model_path).expanduser()
         self.model_id = self.model_path.stem
+        self.repo_id = repo_id
+        self.model_sha256 = _sha256_of(self.model_path)
         self.n_ctx = n_ctx
         self.n_threads = n_threads
         self.temperature = temperature
@@ -110,6 +129,9 @@ class LlamaCppAgent:
         return {
             "kind": "llamacpp",
             "model": self.model_id,
+            "repo_id": self.repo_id,
+            "model_file": self.model_path.name,
+            "model_sha256": self.model_sha256,
             "n_ctx": self.n_ctx,
             "n_threads": self.n_threads,
             "temperature": self.temperature,
