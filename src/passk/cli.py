@@ -108,8 +108,12 @@ def run_cmd(
     json_output: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
     smoke: Annotated[
         bool,
-        typer.Option("--smoke", help="Check the setup: one tier-1 and one tier-2 task, n=1."),
+        typer.Option("--smoke", help="Check the setup: first tier-1 and tier-2 tasks, n=1."),
     ] = False,
+    smoke_tasks: Annotated[
+        int,
+        typer.Option("--smoke-tasks", help="With --smoke: 1 (tier 1 only) or 2 (tiers 1 and 2)."),
+    ] = 2,
     out: Annotated[
         str,
         typer.Option("--out", help="Directory that receives <run_id>/. Default: runs."),
@@ -123,8 +127,12 @@ def run_cmd(
         if smoke:
             from passk.envs.base import load_tasks
 
+            if smoke_tasks not in (1, 2):
+                raise CliError("--smoke-tasks must be 1 or 2")
             tasks = sorted(load_tasks(run_config.tasks_glob), key=lambda t: t.id)
-            picked = [t for t in tasks if t.tier == 1][:1] + [t for t in tasks if t.tier == 2][:1]
+            picked = [t for t in tasks if t.tier == 1][:1]
+            if smoke_tasks == 2:
+                picked += [t for t in tasks if t.tier == 2][:1]
             deps = runner.RunDeps(tasks=picked)
             run_config = run_config.model_copy(
                 update={"n_trials": 1, "run_id": f"{run_config.run_id}-smoke"}
@@ -344,6 +352,10 @@ def validate_cmd(
     smoke: Annotated[
         bool, typer.Option("--smoke", help="Quick check: 10 pairs. Same E1, fewer E2 pairs.")
     ] = False,
+    out: Annotated[
+        str | None,
+        typer.Option("--out", help="Also write validate.json and env.json into this directory."),
+    ] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
 ) -> None:
     """Check estimator and gate calibration (experiments E1 and E2)."""
@@ -362,6 +374,17 @@ def validate_cmd(
             e2_simulate=validate.make_labstock_simulator(PACKAGED_TASKS, validate.E2_TRIALS),
             workers=workers,
         )
+        if out is not None:
+            out_dir = Path(out)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            env_record = runner.environment_record()
+            env_record["synthetic"] = True
+            (out_dir / "validate.json").write_text(
+                json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            (out_dir / "env.json").write_text(
+                json.dumps(env_record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
         if json_output:
             _emit_json(result)
             return 0
@@ -389,6 +412,36 @@ def validate_cmd(
             f"({e2['ab']['detections']}/{e2['pairs']}, "
             f"95% CI {e2['ab']['ci95'][0]:.3f} to {e2['ab']['ci95'][1]:.3f})"
         )
+        return 0
+
+    _guard(json_output, body)
+
+
+@app.command("site")
+def site_cmd(
+    results: Annotated[str, typer.Option("--results", help="Directory searched for reports.")] = (
+        "results"
+    ),
+    out: Annotated[str, typer.Option("--out", help="Output directory.")] = "build/site",
+    json_output: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
+) -> None:
+    """Build the static Pages site from the committed reports (placeholder when none exist)."""
+
+    def body() -> int:
+        from passk.site.build import build_site, placeholder_site
+
+        out_dir = Path(out)
+        found = sorted(Path(results).rglob("report.json")) if Path(results).is_dir() else []
+        if found:
+            index = build_site(Path(results), out_dir)
+            status = "built"
+        else:
+            index = placeholder_site(out_dir)
+            status = "placeholder"
+        if json_output:
+            _emit_json({"status": status, "index": str(index), "reports": len(found)})
+        else:
+            typer.echo(f"site {status}: {index} ({len(found)} reports)")
         return 0
 
     _guard(json_output, body)

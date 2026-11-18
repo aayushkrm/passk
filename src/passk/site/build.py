@@ -408,3 +408,37 @@ def build_site(results_dir: Path | Sequence[RunReport], out_dir: Path) -> Path:
     index.write_text(_index_html(entries), encoding="utf-8")
     (out_dir / "llms.txt").write_text(_llms_text(entries), encoding="utf-8")
     return index
+
+
+_PLACEHOLDER = """<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>passk results</title>
+<style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;
+line-height:1.5}</style>
+</head>
+<body>
+<h1>passk</h1>
+<p>No committed results yet. This page is a placeholder: no run report exists under
+<code>results/</code>, so there is nothing to show.</p>
+<p>Scripted demo output, when shown, is labelled SYNTHETIC. Model results appear here only
+after <code>passk run</code> writes a report and it is committed.</p>
+</body>
+</html>
+"""
+
+
+def placeholder_site(out_dir: Path) -> Path:
+    """Write a placeholder site for a repository with no committed reports.
+
+    Args:
+        out_dir: Output directory, created if missing.
+
+    Returns:
+        The path of the written ``index.html``.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    index = out_dir / "index.html"
+    index.write_text(_PLACEHOLDER, encoding="utf-8")
+    (out_dir / "llms.txt").write_text("passk: no committed results yet.\n", encoding="utf-8")
+    return index
