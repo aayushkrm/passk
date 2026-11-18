@@ -2,10 +2,103 @@
 
 A candidate fails if pass^k@K drops by more than ``max_drop`` AND the paired-bootstrap
 CI for the drop excludes 0 (when ``require_significance`` is set), or if the candidate's
-pass^k@K falls below the absolute floor ``min_pass_hat_k``.
+mean pass^k@K falls below the absolute floor ``min_pass_hat_k``.
+
+The paired bootstrap resamples tasks. For each task it pairs the baseline and candidate
+pass^k@K values. It uses ``passk.metrics.paired_bootstrap`` when that function is
+implemented, and otherwise a local seeded fallback with the same definition.
 """
 
-from passk.schema import GateDecision, GatePolicy, RunReport
+from __future__ import annotations
+
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import yaml
+from pydantic import ValidationError
+
+from passk import metrics
+from passk.schema import GateDecision, GatePolicy, RunReport, TaskStats
+
+BOOTSTRAP_RESAMPLES = 10_000
+BOOTSTRAP_SEED = 0
+POLICY_KEYS = frozenset({"k", "max_drop", "min_pass_hat_k", "require_significance", "alpha"})
+
+
+def load_policy(path: Path) -> GatePolicy:
+    """Load a gate policy from a YAML mapping.
+
+    The file holds the ``GatePolicy`` fields at top level: ``k``, ``max_drop``,
+    ``min_pass_hat_k`` (optional), ``require_significance`` (default true) and ``alpha``
+    (default 0.05). Unknown keys are rejected so that typos fail loudly.
+
+    Args:
+        path: Path to the YAML file.
+
+    Returns:
+        The validated policy.
+
+    Raises:
+        ValueError: If the file is not a mapping, has unknown keys, or fails validation.
+    """
+    data: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: policy must be a YAML mapping")
+    unknown = sorted(str(key) for key in set(data) - POLICY_KEYS)
+    if unknown:
+        raise ValueError(f"{path}: unknown policy keys {unknown}; allowed {sorted(POLICY_KEYS)}")
+    try:
+        policy = GatePolicy.model_validate(data)
+    except ValidationError as exc:
+        raise ValueError(f"{path}: invalid policy: {exc}") from exc
+    _check_policy(policy)
+    return policy
+
+
+def _check_policy(policy: GatePolicy) -> None:
+    if policy.k < 1:
+        raise ValueError("policy k must be at least 1")
+    if policy.max_drop < 0:
+        raise ValueError("policy max_drop must be non-negative")
+    if not 0.0 < policy.alpha < 1.0:
+        raise ValueError("policy alpha must lie strictly between 0 and 1")
+
+
+def _local_paired_bootstrap(
+    a: Sequence[float], b: Sequence[float], alpha: float
+) -> tuple[float, float, float]:
+    """Seeded percentile bootstrap over tasks for the mean of ``b - a``.
+
+    Same definition as ``passk.metrics.paired_bootstrap``. Used only until that function
+    is implemented.
+    """
+    diffs = np.asarray(b, dtype=float) - np.asarray(a, dtype=float)
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    picks = rng.integers(0, diffs.size, size=(BOOTSTRAP_RESAMPLES, diffs.size))
+    means = diffs[picks].mean(axis=1)
+    low, high = np.quantile(means, [alpha / 2.0, 1.0 - alpha / 2.0])
+    return float(diffs.mean()), float(low), float(high)
+
+
+def _paired_ci(a: Sequence[float], b: Sequence[float], alpha: float) -> tuple[float, float, float]:
+    """Return ``(mean_delta, ci_low, ci_high)`` for ``b - a`` with a seeded paired bootstrap."""
+    try:
+        return metrics.paired_bootstrap(
+            a, b, n_boot=BOOTSTRAP_RESAMPLES, alpha=alpha, seed=BOOTSTRAP_SEED
+        )
+    except NotImplementedError:
+        return _local_paired_bootstrap(a, b, alpha)
+
+
+def _values_at_k(stats: Sequence[TaskStats], k: int, label: str) -> dict[str, float]:
+    values: dict[str, float] = {}
+    for task in stats:
+        if k not in task.pass_hat_k:
+            raise ValueError(f"{label} task {task.task_id} has no pass^{k} (n={task.n})")
+        values[task.task_id] = task.pass_hat_k[k]
+    return values
 
 
 def gate(baseline: RunReport, candidate: RunReport, policy: GatePolicy) -> GateDecision:
@@ -17,9 +110,77 @@ def gate(baseline: RunReport, candidate: RunReport, policy: GatePolicy) -> GateD
         policy: Gate thresholds.
 
     Returns:
-        The decision with the paired delta and its CI.
+        The decision with the paired delta (candidate minus baseline) and its CI.
 
     Raises:
-        ValueError: If the two runs do not share the same task ids.
+        ValueError: If the two runs do not share the same task ids, a task lacks pass^k at
+            ``policy.k``, the run has no tasks, or the policy is invalid.
     """
-    raise NotImplementedError("gate: scheduled for work package P-E")
+    _check_policy(policy)
+    k = policy.k
+    base = _values_at_k(baseline.tasks, k, "baseline")
+    cand = _values_at_k(candidate.tasks, k, "candidate")
+    if not base:
+        raise ValueError("baseline report has no tasks")
+    if set(base) != set(cand):
+        only_base = sorted(set(base) - set(cand))
+        only_cand = sorted(set(cand) - set(base))
+        raise ValueError(
+            f"task ids differ: only in baseline {only_base}, only in candidate {only_cand}"
+        )
+
+    ids = sorted(base)
+    a = [base[task_id] for task_id in ids]
+    b = [cand[task_id] for task_id in ids]
+    mean_a = sum(a) / len(a)
+    mean_b = sum(b) / len(b)
+    delta, ci_low, ci_high = _paired_ci(a, b, policy.alpha)
+
+    level = f"{(1.0 - policy.alpha) * 100:g}%"
+    drop = 0.0 - delta  # written this way so a zero delta never prints as -0.000
+    reasons = [
+        f"pass^{k}: baseline {mean_a:.3f}, candidate {mean_b:.3f}, delta {delta:+.3f} "
+        f"({level} CI [{ci_low:+.3f}, {ci_high:+.3f}], {len(ids)} tasks)"
+    ]
+    failed = False
+    if drop > policy.max_drop:
+        significant = ci_high < 0.0
+        if not policy.require_significance:
+            failed = True
+            reasons.append(
+                f"regression: drop {drop:.3f} exceeds max_drop {policy.max_drop:.3f} "
+                "(significance not required)"
+            )
+        elif significant:
+            failed = True
+            reasons.append(
+                f"regression: drop {drop:.3f} exceeds max_drop {policy.max_drop:.3f} "
+                f"and the {level} CI excludes 0"
+            )
+        else:
+            reasons.append(
+                f"not a regression: drop {drop:.3f} exceeds max_drop {policy.max_drop:.3f} "
+                f"but the {level} CI includes 0"
+            )
+    else:
+        reasons.append(f"drop {drop:.3f} is within max_drop {policy.max_drop:.3f}")
+
+    if policy.min_pass_hat_k is not None:
+        floor = policy.min_pass_hat_k
+        if mean_b < floor:
+            failed = True
+            reasons.append(
+                f"floor: candidate pass^{k} {mean_b:.3f} is below min_pass_hat_k {floor:.3f}"
+            )
+        else:
+            reasons.append(
+                f"floor: candidate pass^{k} {mean_b:.3f} meets min_pass_hat_k {floor:.3f}"
+            )
+
+    return GateDecision(
+        passed=not failed,
+        reasons=reasons,
+        delta=float(delta),
+        ci_low=float(ci_low),
+        ci_high=float(ci_high),
+    )

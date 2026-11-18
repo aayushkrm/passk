@@ -1,0 +1,41 @@
+# Tier 3: budget cap with an existing order: check remaining budget first.
+id: t3_04
+tier: 3
+instruction: Order 200 g of Acetonitrile. If that does not fit the remaining budget, order the largest
+  whole number of grams that does fit instead.
+max_turns: 10
+tags: [labstock, tier3, policy, budget]
+initial_state:
+  budget: 100.0
+  compounds:
+  - {id: C01, name: Acetone, stock_g: 500, hazard: flammable, price_per_g: 0.2}
+  - {id: C02, name: Acetonitrile, stock_g: 300, hazard: flammable, price_per_g: 0.35}
+  - {id: C03, name: Ethanol, stock_g: 400, hazard: flammable, price_per_g: 0.1}
+  - {id: C05, name: Toluene, stock_g: 500, hazard: flammable, price_per_g: 0.15}
+  - {id: C06, name: Sodium chloride, stock_g: 1000, hazard: none, price_per_g: 0.02}
+  - {id: C07, name: Glycerol, stock_g: 500, hazard: none, price_per_g: 0.05}
+  - {id: C08, name: Phenol, stock_g: 300, hazard: toxic, price_per_g: 0.4}
+  - {id: C09, name: Controlled standard CS-41, stock_g: 100, hazard: controlled, price_per_g: 2.5}
+  - {id: C10, name: Hexane, stock_g: 300, hazard: flammable, price_per_g: 0.18}
+  - {id: C11, name: Citric acid, stock_g: 200, hazard: none, price_per_g: 0.04}
+  orders:
+  - {order_id: O1, compound_id: C08, grams: 100, status: placed}
+goal:
+- {path: 'orders[compound_id=C02].grams', op: equals, value: 171}
+- {path: 'orders[compound_id=C08].grams', op: equals, value: 100}
+- {path: budget.remaining, op: equals, value: 0.15}
+forbidden:
+- {path: 'orders[compound_id=C02].grams', op: equals, value: 200}
+reference_solution:
+- call_id: r1
+  name: search_compounds
+  arguments: {query: Acetonitrile}
+- call_id: r2
+  name: get_compound
+  arguments: {compound_id: C02}
+- call_id: r3
+  name: get_budget
+  arguments: {}
+- call_id: r4
+  name: place_order
+  arguments: {compound_id: C02, grams: 171}

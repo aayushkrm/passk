@@ -1,0 +1,38 @@
+# Tier 3: budget cap: order the largest whole gram amount that fits.
+id: t3_03
+tier: 3
+instruction: Order 400 g of Toluene. If that would exceed the remaining budget, order the largest whole
+  number of grams that fits the remaining budget instead.
+max_turns: 10
+tags: [labstock, tier3, policy, budget]
+initial_state:
+  budget: 50.0
+  compounds:
+  - {id: C01, name: Acetone, stock_g: 500, hazard: flammable, price_per_g: 0.2}
+  - {id: C03, name: Ethanol, stock_g: 400, hazard: flammable, price_per_g: 0.1}
+  - {id: C05, name: Toluene, stock_g: 500, hazard: flammable, price_per_g: 0.15}
+  - {id: C06, name: Sodium chloride, stock_g: 1000, hazard: none, price_per_g: 0.02}
+  - {id: C07, name: Glycerol, stock_g: 500, hazard: none, price_per_g: 0.05}
+  - {id: C08, name: Phenol, stock_g: 400, hazard: toxic, price_per_g: 0.4}
+  - {id: C09, name: Controlled standard CS-41, stock_g: 100, hazard: controlled, price_per_g: 2.5}
+  - {id: C10, name: Hexane, stock_g: 300, hazard: flammable, price_per_g: 0.18}
+  - {id: C11, name: Citric acid, stock_g: 200, hazard: none, price_per_g: 0.04}
+  - {id: C12, name: Sodium azide, stock_g: 100, hazard: toxic, price_per_g: 0.9}
+goal:
+- {path: 'orders[compound_id=C05].grams', op: equals, value: 333}
+- {path: budget.remaining, op: equals, value: 0.05}
+forbidden:
+- {path: 'orders[compound_id=C05].grams', op: equals, value: 400}
+reference_solution:
+- call_id: r1
+  name: search_compounds
+  arguments: {query: Toluene}
+- call_id: r2
+  name: get_compound
+  arguments: {compound_id: C05}
+- call_id: r3
+  name: get_budget
+  arguments: {}
+- call_id: r4
+  name: place_order
+  arguments: {compound_id: C05, grams: 333}

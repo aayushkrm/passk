@@ -1,0 +1,37 @@
+# Tier 2: search, get_compound to find the order id, then cancel_order.
+id: t2_07
+tier: 2
+instruction: Cancel the placed Acetone order.
+max_turns: 8
+tags: [labstock, tier2, lookup]
+initial_state:
+  budget: 100.0
+  compounds:
+  - {id: C01, name: Acetone, stock_g: 480, hazard: flammable, price_per_g: 0.2}
+  - {id: C02, name: Acetonitrile, stock_g: 300, hazard: flammable, price_per_g: 0.35}
+  - {id: C03, name: Ethanol, stock_g: 400, hazard: flammable, price_per_g: 0.1}
+  - {id: C05, name: Toluene, stock_g: 500, hazard: flammable, price_per_g: 0.15}
+  - {id: C06, name: Sodium chloride, stock_g: 1000, hazard: none, price_per_g: 0.02}
+  - {id: C07, name: Glycerol, stock_g: 500, hazard: none, price_per_g: 0.05}
+  - {id: C08, name: Phenol, stock_g: 400, hazard: toxic, price_per_g: 0.4}
+  - {id: C09, name: Controlled standard CS-41, stock_g: 100, hazard: controlled, price_per_g: 2.5}
+  - {id: C10, name: Hexane, stock_g: 300, hazard: flammable, price_per_g: 0.18}
+  - {id: C11, name: Citric acid, stock_g: 200, hazard: none, price_per_g: 0.04}
+  orders:
+  - {order_id: O3, compound_id: C01, grams: 20, status: placed}
+goal:
+- {path: 'orders[order_id=O3].status', op: equals, value: cancelled}
+- {path: 'compounds[id=C01].stock_g', op: equals, value: 500}
+- {path: budget.remaining, op: equals, value: 100.0}
+forbidden:
+- {path: 'orders[status=placed]', op: count_eq, value: 1}
+reference_solution:
+- call_id: r1
+  name: search_compounds
+  arguments: {query: Acetone}
+- call_id: r2
+  name: get_compound
+  arguments: {compound_id: C01}
+- call_id: r3
+  name: cancel_order
+  arguments: {order_id: O3}

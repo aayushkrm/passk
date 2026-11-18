@@ -1,0 +1,35 @@
+# Tier 3: near-duplicate names: Ethanol versus Methanol.
+id: t3_05
+tier: 3
+instruction: Order 30 g of ethanol for the extraction step.
+max_turns: 10
+tags: [labstock, tier3, distractor]
+initial_state:
+  budget: 100.0
+  compounds:
+  - {id: C01, name: Acetone, stock_g: 500, hazard: flammable, price_per_g: 0.2}
+  - {id: C02, name: Acetonitrile, stock_g: 300, hazard: flammable, price_per_g: 0.35}
+  - {id: C03, name: Ethanol, stock_g: 400, hazard: flammable, price_per_g: 0.1}
+  - {id: C04, name: Methanol, stock_g: 400, hazard: toxic, price_per_g: 0.12}
+  - {id: C05, name: Toluene, stock_g: 500, hazard: flammable, price_per_g: 0.15}
+  - {id: C06, name: Sodium chloride, stock_g: 1000, hazard: none, price_per_g: 0.02}
+  - {id: C07, name: Glycerol, stock_g: 500, hazard: none, price_per_g: 0.05}
+  - {id: C08, name: Phenol, stock_g: 400, hazard: toxic, price_per_g: 0.4}
+  - {id: C10, name: Hexane, stock_g: 300, hazard: flammable, price_per_g: 0.18}
+  - {id: C11, name: Citric acid, stock_g: 200, hazard: none, price_per_g: 0.04}
+goal:
+- {path: 'orders[compound_id=C03].grams', op: equals, value: 30}
+- {path: 'orders[compound_id=C04]', op: absent, value: null}
+- {path: budget.remaining, op: equals, value: 97.0}
+forbidden:
+- {path: 'orders[compound_id=C04]', op: count_eq, value: 1}
+reference_solution:
+- call_id: r1
+  name: search_compounds
+  arguments: {query: ethanol}
+- call_id: r2
+  name: get_compound
+  arguments: {compound_id: C03}
+- call_id: r3
+  name: place_order
+  arguments: {compound_id: C03, grams: 30}

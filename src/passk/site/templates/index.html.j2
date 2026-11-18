@@ -1,0 +1,41 @@
+{% extends "base.html.j2" %}
+{% block content %}
+<section aria-labelledby="runs-heading">
+  <h2 id="runs-heading">Runs</h2>
+  <div class="scroll">
+  <table>
+    <caption>pass^k at each k, mean over tasks. Each run links to its own page.</caption>
+    <thead>
+      <tr>
+        <th scope="col">Run</th><th scope="col">Agent</th><th scope="col">Tasks</th><th scope="col">Trials</th>
+        {% for k in k_values %}<th scope="col">pass^{{ k }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+    {% for run in runs %}
+      <tr>
+        <th scope="row"><a href="runs/{{ run.slug }}/index.html">{{ run.run_id }}</a>{% if run.synthetic %} <span class="badge">SYNTHETIC</span>{% endif %}</th>
+        <td><code>{{ run.agent_kind }}</code></td>
+        <td>{{ run.n_tasks }}</td>
+        <td>{{ run.n_trials }}</td>
+        {% for value in run.cells %}<td>{{ "%.3f"|format(value) if value is not none else "n/a" }}</td>{% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section aria-labelledby="curve-heading">
+  <h2 id="curve-heading">pass^k against k, all runs</h2>
+  {{ curves_svg|safe }}
+</section>
+
+<section aria-labelledby="machine-heading">
+  <h2 id="machine-heading">Machine-readable copies</h2>
+  <ul>
+    <li><a href="llms.txt">llms.txt</a>: run list and links, plain text.</li>
+    {% for run in runs %}<li><a href="runs/{{ run.slug }}/report.json">{{ run.run_id }}: report.json</a></li>{% endfor %}
+  </ul>
+</section>
+{% endblock %}

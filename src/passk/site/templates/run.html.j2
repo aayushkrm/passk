@@ -1,0 +1,115 @@
+{% extends "base.html.j2" %}
+{% block content %}
+<section aria-labelledby="meta-heading">
+  <h2 id="meta-heading">Run settings</h2>
+  <dl class="meta">
+    <div><dt>Agent</dt><dd><code>{{ agent_kind }}</code></dd></div>
+    <div><dt>Transport</dt><dd><code>{{ transport }}</code></dd></div>
+    <div><dt>Tasks</dt><dd>{{ n_tasks }}</dd></div>
+    <div><dt>Trials per task</dt><dd>{{ n_trials }}</dd></div>
+    <div><dt>Wall time</dt><dd>{{ wall_s }} s</dd></div>
+  </dl>
+</section>
+
+<section aria-labelledby="summary-heading">
+  <h2 id="summary-heading">Summary</h2>
+  <div class="scroll">
+  <table>
+    <caption>Mean over tasks. CI is the interval stored in the report.</caption>
+    <thead>
+      <tr><th scope="col">k</th><th scope="col">pass^k</th><th scope="col">CI low</th><th scope="col">CI high</th><th scope="col">pass@k</th></tr>
+    </thead>
+    <tbody>
+    {% for row in summary_rows %}
+      <tr>
+        <th scope="row">{{ row.k }}</th>
+        <td>{{ "%.3f"|format(row.pass_hat_k) }}</td>
+        <td>{{ "%.3f"|format(row.ci_low) if row.ci_low is not none else "n/a" }}</td>
+        <td>{{ "%.3f"|format(row.ci_high) if row.ci_high is not none else "n/a" }}</td>
+        <td>{{ "%.3f"|format(row.pass_at_k) if row.pass_at_k is not none else "n/a" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section aria-labelledby="curve-heading">
+  <h2 id="curve-heading">pass^k against k</h2>
+  <p class="note">Solid line: pass^k. Dashed line: pass@k. Bars are the stored interval for pass^k.</p>
+  {{ curves_svg|safe }}
+</section>
+
+<section aria-labelledby="heat-heading">
+  <h2 id="heat-heading">{% if trajectories is none %}Success rate per task{% else %}Task by trial outcome{% endif %}</h2>
+  <p class="note">{% if trajectories is none %}Shading is the fraction of trials that succeeded. Without trajectories.jsonl, individual trials cannot be shown.{% else %}Check mark: success. Cross: failure, with its category on hover.{% endif %}</p>
+  <div class="scroll">{{ heatmap_svg|safe }}</div>
+</section>
+
+<section aria-labelledby="fail-heading">
+  <h2 id="fail-heading">Failure categories</h2>
+  {{ failure_svg|safe }}
+</section>
+
+<section aria-labelledby="tasks-heading">
+  <h2 id="tasks-heading">Tasks</h2>
+  <div class="scroll">
+  <table>
+    <caption>Successes out of trials, with pass^k for each k.</caption>
+    <thead>
+      <tr>
+        <th scope="col">Task</th><th scope="col">Tier</th><th scope="col">Successes</th>
+        {% for k in k_values %}<th scope="col">pass^{{ k }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+    {% for task in task_rows %}
+      <tr>
+        <th scope="row"><code>{{ task.task_id }}</code></th>
+        <td>{{ task.tier }}</td>
+        <td>{{ task.c }}/{{ task.n }}</td>
+        {% for value in task.per_k %}<td>{{ "%.3f"|format(value) if value is not none else "n/a" }}</td>{% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+{% if trajectories is not none %}
+<section aria-labelledby="traj-heading">
+  <h2 id="traj-heading">Trajectories ({{ trajectories|length }})</h2>
+  <p class="note">Each entry expands to its steps. Text is taken from trajectories.jsonl and shortened where long.</p>
+  {% for t in trajectories %}
+  <details class="traj {{ 'ok' if t.success else 'ko' }}">
+    <summary><span>{{ t.title }}</span> <span class="badge">{{ t.status }}</span></summary>
+    {% if t.violations %}<p class="ko">Violations: {{ t.violations|join("; ") }}</p>{% endif %}
+    <ol class="steps">
+    {% for s in t.steps %}
+      <li>
+        <code>{{ s.kind }}{% if s.tool %} {{ s.tool }}{% endif %}</code> <span class="muted">{{ s.latency }}</span>
+        {% if s.arguments %}<pre>{{ s.arguments }}</pre>{% endif %}
+        {% if s.ok is not none %}<p><span class="{{ 'ok' if s.ok else 'ko' }}">{{ 'ok' if s.ok else 'error' }}</span>{% if s.error %} {{ s.error }}{% endif %}</p><pre>{{ s.content }}</pre>{% endif %}
+        {% if s.message %}<p>{{ s.message }}</p>{% endif %}
+      </li>
+    {% endfor %}
+    </ol>
+    <p class="muted">Final state: <code>{{ t.final_state }}</code></p>
+  </details>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section aria-labelledby="env-heading">
+  <h2 id="env-heading">Record</h2>
+  {% if report_link %}<p><a href="{{ report_link }}">report.json</a></p>{% endif %}
+  <details>
+    <summary>Environment record (env_info)</summary>
+    <pre>{{ env_json }}</pre>
+  </details>
+  <details>
+    <summary>Token totals</summary>
+    <pre>{{ tokens_json }}</pre>
+  </details>
+</section>
+{% endblock %}

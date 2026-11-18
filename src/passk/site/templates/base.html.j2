@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="generator" content="passk">
+  <title>{{ page_title }}</title>
+  <style>
+{{ css|safe }}
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="masthead">
+    <p class="eyebrow">passk &middot; pass^k reliability report</p>
+    <h1>{{ heading }}</h1>
+  </header>
+  <main id="main">
+    {% if synthetic %}
+    <div class="banner" role="note"><strong>SYNTHETIC.</strong>{{ banner_text }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="foot">
+    <p>Every number on this page is computed from a report.json file. None is typed by hand.</p>
+  </footer>
+</body>
+</html>

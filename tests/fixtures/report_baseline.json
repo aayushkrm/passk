@@ -1,0 +1,238 @@
+{
+  "schema_version": "1",
+  "run_id": "synthetic-baseline",
+  "config": {
+    "run_id": "synthetic-baseline",
+    "env": "labstock",
+    "tasks_glob": "src/passk/tasks/labstock/*.yaml",
+    "agent": {
+      "kind": "noisy_oracle",
+      "params": {
+        "p_error": 0.05,
+        "seed": 1
+      }
+    },
+    "n_trials": 5,
+    "base_seed": 7,
+    "transport": "inprocess",
+    "k_values": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  "env_info": {
+    "synthetic": true,
+    "label": "SYNTHETIC",
+    "note": "Hand-chosen trial counts for tests. Not a measurement.",
+    "git_sha": null
+  },
+  "tasks": [
+    {
+      "task_id": "t1-001",
+      "tier": 1,
+      "n": 5,
+      "c": 5,
+      "pass_at_k": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0,
+        "4": 1.0,
+        "5": 1.0
+      },
+      "pass_hat_k": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0,
+        "4": 1.0,
+        "5": 1.0
+      },
+      "failures": {}
+    },
+    {
+      "task_id": "t1-002",
+      "tier": 1,
+      "n": 5,
+      "c": 5,
+      "pass_at_k": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0,
+        "4": 1.0,
+        "5": 1.0
+      },
+      "pass_hat_k": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0,
+        "4": 1.0,
+        "5": 1.0
+      },
+      "failures": {}
+    },
+    {
+      "task_id": "t2-001",
+      "tier": 2,
+      "n": 5,
+      "c": 4,
+      "pass_at_k": {
+        "1": 0.8,
+        "2": 1.0,
+        "3": 1.0,
+        "4": 1.0,
+        "5": 1.0
+      },
+      "pass_hat_k": {
+        "1": 0.8,
+        "2": 0.6,
+        "3": 0.4,
+        "4": 0.2,
+        "5": 0.0
+      },
+      "failures": {
+        "policy_violation": 1
+      }
+    },
+    {
+      "task_id": "t2-002",
+      "tier": 2,
+      "n": 5,
+      "c": 4,
+      "pass_at_k": {
+        "1": 0.8,
+        "2": 1.0,
+        "3": 1.0,
+        "4": 1.0,
+        "5": 1.0
+      },
+      "pass_hat_k": {
+        "1": 0.8,
+        "2": 0.6,
+        "3": 0.4,
+        "4": 0.2,
+        "5": 0.0
+      },
+      "failures": {
+        "loop": 1
+      }
+    },
+    {
+      "task_id": "t3-001",
+      "tier": 3,
+      "n": 5,
+      "c": 3,
+      "pass_at_k": {
+        "1": 0.6,
+        "2": 0.9,
+        "3": 1.0,
+        "4": 1.0,
+        "5": 1.0
+      },
+      "pass_hat_k": {
+        "1": 0.6,
+        "2": 0.3,
+        "3": 0.1,
+        "4": 0.0,
+        "5": 0.0
+      },
+      "failures": {
+        "wrong_state": 1,
+        "max_turns": 1
+      }
+    },
+    {
+      "task_id": "t3-002",
+      "tier": 3,
+      "n": 5,
+      "c": 3,
+      "pass_at_k": {
+        "1": 0.6,
+        "2": 0.9,
+        "3": 1.0,
+        "4": 1.0,
+        "5": 1.0
+      },
+      "pass_hat_k": {
+        "1": 0.6,
+        "2": 0.3,
+        "3": 0.1,
+        "4": 0.0,
+        "5": 0.0
+      },
+      "failures": {
+        "max_turns": 1,
+        "policy_violation": 1
+      }
+    }
+  ],
+  "summary": {
+    "pass_hat_k": {
+      "1": {
+        "mean": 0.7999999999999998,
+        "ci_low": 0.6666666666666666,
+        "ci_high": 0.9333333333333332
+      },
+      "2": {
+        "mean": 0.6333333333333333,
+        "ci_low": 0.39999999999999997,
+        "ci_high": 0.8666666666666667
+      },
+      "3": {
+        "mean": 0.5,
+        "ci_low": 0.20000000000000004,
+        "ci_high": 0.7999999999999999
+      },
+      "4": {
+        "mean": 0.4000000000000001,
+        "ci_low": 0.06666666666666667,
+        "ci_high": 0.7333333333333334
+      },
+      "5": {
+        "mean": 0.3333333333333333,
+        "ci_low": 0.0,
+        "ci_high": 0.6666666666666666
+      }
+    },
+    "pass_at_k": {
+      "1": {
+        "mean": 0.7999999999999998,
+        "ci_low": 0.6666666666666666,
+        "ci_high": 0.9333333333333332
+      },
+      "2": {
+        "mean": 0.9666666666666668,
+        "ci_low": 0.9333333333333332,
+        "ci_high": 1.0
+      },
+      "3": {
+        "mean": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0
+      },
+      "4": {
+        "mean": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0
+      },
+      "5": {
+        "mean": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0
+      }
+    }
+  },
+  "failure_totals": {
+    "policy_violation": 2,
+    "loop": 1,
+    "wrong_state": 1,
+    "max_turns": 2
+  },
+  "tokens": {
+    "input_total": 0,
+    "output_total": 0,
+    "note": "synthetic"
+  },
+  "wall_s": 1.0
+}

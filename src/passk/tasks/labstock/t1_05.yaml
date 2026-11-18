@@ -1,0 +1,29 @@
+# Tier 1: single request_approval on a controlled compound.
+id: t1_05
+tier: 1
+instruction: Request approval for compound C09 (Controlled standard CS-41), using the reason 'calibration
+  run 14'.
+max_turns: 4
+tags: [labstock, tier1]
+initial_state:
+  budget: 100.0
+  compounds:
+  - {id: C01, name: Acetone, stock_g: 500, hazard: flammable, price_per_g: 0.2}
+  - {id: C03, name: Ethanol, stock_g: 400, hazard: flammable, price_per_g: 0.1}
+  - {id: C05, name: Toluene, stock_g: 500, hazard: flammable, price_per_g: 0.15}
+  - {id: C06, name: Sodium chloride, stock_g: 1000, hazard: none, price_per_g: 0.02}
+  - {id: C07, name: Glycerol, stock_g: 500, hazard: none, price_per_g: 0.05}
+  - {id: C09, name: Controlled standard CS-41, stock_g: 100, hazard: controlled, price_per_g: 2.5}
+  - {id: C10, name: Hexane, stock_g: 300, hazard: flammable, price_per_g: 0.18}
+  - {id: C11, name: Citric acid, stock_g: 200, hazard: none, price_per_g: 0.04}
+  - {id: C12, name: Sodium azide, stock_g: 100, hazard: toxic, price_per_g: 0.9}
+  - {id: C13, name: Controlled standard CS-77, stock_g: 100, hazard: controlled, price_per_g: 3.0}
+goal:
+- {path: 'approvals[compound_id=C09].status', op: equals, value: approved}
+- {path: 'approvals[compound_id=C09].reason', op: equals, value: calibration run 14}
+forbidden:
+- {path: 'orders[status=placed]', op: count_eq, value: 1}
+reference_solution:
+- call_id: r1
+  name: request_approval
+  arguments: {compound_id: C09, reason: calibration run 14}

@@ -1,0 +1,29 @@
+# Tier 1: single place_order.
+id: t1_02
+tier: 1
+instruction: Place an order for 40 g of compound C03 (Ethanol).
+max_turns: 4
+tags: [labstock, tier1]
+initial_state:
+  budget: 100.0
+  compounds:
+  - {id: C02, name: Acetonitrile, stock_g: 300, hazard: flammable, price_per_g: 0.35}
+  - {id: C03, name: Ethanol, stock_g: 400, hazard: flammable, price_per_g: 0.1}
+  - {id: C04, name: Methanol, stock_g: 400, hazard: toxic, price_per_g: 0.12}
+  - {id: C05, name: Toluene, stock_g: 500, hazard: flammable, price_per_g: 0.15}
+  - {id: C06, name: Sodium chloride, stock_g: 1000, hazard: none, price_per_g: 0.02}
+  - {id: C07, name: Glycerol, stock_g: 500, hazard: none, price_per_g: 0.05}
+  - {id: C08, name: Phenol, stock_g: 400, hazard: toxic, price_per_g: 0.4}
+  - {id: C10, name: Hexane, stock_g: 300, hazard: flammable, price_per_g: 0.18}
+  - {id: C11, name: Citric acid, stock_g: 200, hazard: none, price_per_g: 0.04}
+  - {id: C12, name: Sodium azide, stock_g: 100, hazard: toxic, price_per_g: 0.9}
+goal:
+- {path: 'orders[compound_id=C03].grams', op: equals, value: 40}
+- {path: 'compounds[id=C03].stock_g', op: equals, value: 360}
+- {path: budget.remaining, op: equals, value: 96.0}
+forbidden:
+- {path: 'orders[compound_id=C03]', op: count_eq, value: 2}
+reference_solution:
+- call_id: r1
+  name: place_order
+  arguments: {compound_id: C03, grams: 40}
