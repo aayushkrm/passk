@@ -208,6 +208,8 @@ class RunConfig(BaseModel):
         base_seed: Base seed for deriving episode seeds.
         transport: How the agent reaches the environment tools.
         k_values: Values of k for pass@k and pass^k.
+        env_params: Keyword arguments for the environment, for example ``{"flaky_p": 0.2}``
+            for labstock. Empty (the default) means the environment's defaults.
     """
 
     run_id: str
@@ -218,6 +220,7 @@ class RunConfig(BaseModel):
     base_seed: int
     transport: Literal["inprocess", "mcp_stdio"]
     k_values: list[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5])
+    env_params: dict[str, Any] = Field(default_factory=dict)
 
 
 class TaskStats(BaseModel):

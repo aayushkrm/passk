@@ -27,7 +27,7 @@
       "type": "object"
     },
     "RunConfig": {
-      "description": "Configuration for one ``passk run``.\n\nAttributes:\n    run_id: Name of the run; also the output directory name under ``runs/``.\n    env: Environment name (only ``labstock`` in v0.1).\n    tasks_glob: Glob of task YAML files.\n    agent: Agent configuration.\n    n_trials: Trials per task.\n    base_seed: Base seed for deriving episode seeds.\n    transport: How the agent reaches the environment tools.\n    k_values: Values of k for pass@k and pass^k.",
+      "description": "Configuration for one ``passk run``.\n\nAttributes:\n    run_id: Name of the run; also the output directory name under ``runs/``.\n    env: Environment name (only ``labstock`` in v0.1).\n    tasks_glob: Glob of task YAML files.\n    agent: Agent configuration.\n    n_trials: Trials per task.\n    base_seed: Base seed for deriving episode seeds.\n    transport: How the agent reaches the environment tools.\n    k_values: Values of k for pass@k and pass^k.\n    env_params: Keyword arguments for the environment, for example ``{\"flaky_p\": 0.2}``\n        for labstock. Empty (the default) means the environment's defaults.",
       "properties": {
         "agent": {
           "$ref": "#/$defs/AgentConfig"
@@ -40,6 +40,11 @@
           "default": "labstock",
           "title": "Env",
           "type": "string"
+        },
+        "env_params": {
+          "additionalProperties": true,
+          "title": "Env Params",
+          "type": "object"
         },
         "k_values": {
           "items": {

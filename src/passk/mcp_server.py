@@ -14,11 +14,12 @@ Run as ``python -m passk.mcp_server labstock`` to serve the LabStock environment
 """
 
 import inspect
+import json
 import keyword
 import sys
 import threading
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -193,19 +194,24 @@ def serve_stdio(env: Env, tasks: Sequence[Task], server_name: str = "passk") -> 
     build_server(env, tasks, server_name).run("stdio")
 
 
-def serve_labstock_stdio(tasks_glob: str = DEFAULT_TASKS_GLOB) -> None:
+def serve_labstock_stdio(
+    tasks_glob: str = DEFAULT_TASKS_GLOB, env_params: Mapping[str, Any] | None = None
+) -> None:
     """Load the LabStock tasks and run the LabStock server on stdio.
 
     This is the entry point for ``passk serve-tools labstock``.
 
     Args:
         tasks_glob: Glob of task YAML files to serve.
+        env_params: Keyword arguments for ``LabStockEnv``, for example ``{"flaky_p": 0.2}``.
+            Checked by ``validate_env_params``.
     """
     from passk.envs.base import load_tasks
-    from passk.envs.labstock import LabStockEnv
+    from passk.envs.labstock import LabStockEnv, validate_env_params
 
     tasks = load_tasks(tasks_glob)
-    serve_stdio(LabStockEnv(), tasks, server_name="passk-labstock")
+    env = LabStockEnv(**validate_env_params(dict(env_params or {})))
+    serve_stdio(env, tasks, server_name="passk-labstock")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -218,10 +224,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         Process exit code: 0 after a clean run, 2 on a usage error.
     """
     args = list(sys.argv[1:] if argv is None else argv)
-    if args != ["labstock"]:
-        sys.stderr.write("usage: python -m passk.mcp_server labstock\n")
+    usage = "usage: python -m passk.mcp_server labstock [--env-params JSON_OBJECT]\n"
+    if not args or args[0] != "labstock" or len(args) not in (1, 3):
+        sys.stderr.write(usage)
         return 2
-    serve_labstock_stdio()
+    params: dict[str, Any] = {}
+    if len(args) == 3:
+        if args[1] != "--env-params":
+            sys.stderr.write(usage)
+            return 2
+        try:
+            loaded = json.loads(args[2])
+        except ValueError:
+            sys.stderr.write("passk-mcp: --env-params is not valid JSON\n")
+            return 2
+        if not isinstance(loaded, dict):
+            sys.stderr.write("passk-mcp: --env-params must be a JSON object\n")
+            return 2
+        params = loaded
+    try:
+        serve_labstock_stdio(env_params=params)
+    except ValueError as exc:
+        sys.stderr.write(f"passk-mcp: {exc}\n")
+        return 2
     return 0
 
 

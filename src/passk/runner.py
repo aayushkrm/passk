@@ -25,6 +25,7 @@ import json
 import os
 import re
 import statistics
+import sys
 import time
 from collections import Counter
 from collections.abc import Callable, Sequence
@@ -150,14 +151,27 @@ def build_transport(config: RunConfig) -> ToolTransport:
     """
     if config.env != "labstock":
         raise ValueError(f"unknown environment: {config.env!r}")
+    from passk.envs.labstock import validate_env_params
+
+    params = validate_env_params(config.env_params)
     if config.transport == "inprocess":
         from passk.envs.labstock import LabStockEnv
         from passk.transport import InProcessTransport
 
-        return InProcessTransport(LabStockEnv())
+        return InProcessTransport(LabStockEnv(**params))
     from passk.transport import MCPStdioTransport
 
-    return MCPStdioTransport(env_name=config.env)
+    if not params:
+        return MCPStdioTransport(env_name=config.env)
+    command = [
+        sys.executable,
+        "-m",
+        "passk.mcp_server",
+        config.env,
+        "--env-params",
+        json.dumps(params, sort_keys=True),
+    ]
+    return MCPStdioTransport(env_name=config.env, command=command)
 
 
 def _default_check_goal(task: Task, final_state: dict[str, Any], violations: list[str]) -> bool:

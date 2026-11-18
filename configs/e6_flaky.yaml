@@ -1,0 +1,21 @@
+# E6 stretch, Qwen2.5-1.5B-Instruct Q4_K_M, T=0.7, prompt v1, 24 tasks x 3 trials, MCP stdio.
+# Transient tool failures: each call fails once with probability 0.2 (seeded per episode).
+run_id: e6-qwen2.5-1.5b-flaky0.2
+env: labstock
+tasks_glob: src/passk/tasks/labstock/*.yaml
+agent:
+  kind: llamacpp
+  params:
+    model_path: ~/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/qwen2.5-1.5b-instruct-q4_k_m.gguf
+    repo_id: Qwen/Qwen2.5-1.5B-Instruct-GGUF
+    n_ctx: 4096
+    n_threads: 4
+    temperature: 0.7
+    prompt_variant: v1
+    max_tokens: 256
+n_trials: 3
+env_params:
+  flaky_p: 0.2
+base_seed: 2026
+transport: mcp_stdio
+k_values: [1, 2, 3, 4, 5]

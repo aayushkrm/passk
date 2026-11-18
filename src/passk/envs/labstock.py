@@ -154,6 +154,35 @@ class _Episode:
     transient_pending: set[str] = field(default_factory=set)
 
 
+ENV_PARAM_NAMES: tuple[str, ...] = ("flaky_p",)
+"""Keyword arguments of ``LabStockEnv`` that a run config may set through ``env_params``."""
+
+
+def validate_env_params(params: dict[str, Any]) -> dict[str, float]:
+    """Check run-config environment parameters and return them as a fresh dict.
+
+    Args:
+        params: Parameters from ``RunConfig.env_params``.
+
+    Returns:
+        The validated parameters, ready for ``LabStockEnv(**params)``.
+
+    Raises:
+        ValueError: On an unknown name or a value outside its range.
+    """
+    unknown = sorted(set(params) - set(ENV_PARAM_NAMES))
+    if unknown:
+        raise ValueError(f"unknown labstock env_params {unknown}; allowed {list(ENV_PARAM_NAMES)}")
+    checked: dict[str, float] = {}
+    for name, value in params.items():
+        if not _is_number(value):
+            raise ValueError(f"env_params.{name} must be a number, got {value!r}")
+        if name == "flaky_p" and not 0.0 <= float(value) <= 1.0:
+            raise ValueError(f"env_params.flaky_p must be in [0, 1], got {value}")
+        checked[name] = float(value)
+    return checked
+
+
 class LabStockEnv(BaseEnv):
     """Lab-inventory environment implementing the ``Env`` protocol."""
 
