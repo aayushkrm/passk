@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "passk: pass^k reliability harness for tool-using agents"
+type: software
+version: 0.1.0
+authors:
+  - family-names: Kumar
+    given-names: Ayush
+license: MIT
+repository-code: "https://github.com/aayushkrm/passk"
+keywords:
+  - agents
+  - evaluation
+  - pass^k
+  - reliability
+  - model-context-protocol

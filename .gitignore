@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+dist/
+/build/
+
+# Run outputs and scratch
+/runs/
+results/scratch/
+
+# Model weights and raw generations: never committed
+models/
+*.gguf
+raw/
+
+# Local config and OS noise
+.env
+.DS_Store
