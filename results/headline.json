@@ -1,0 +1,67 @@
+{
+  "calibration": {
+    "e1": {
+      "levels": [
+        {
+          "max_abs_error": 0.0,
+          "max_abs_z": 0.0,
+          "p": 0.0
+        },
+        {
+          "max_abs_error": 0.041079505966201246,
+          "max_abs_z": 0.9663301052332379,
+          "p": 0.05
+        },
+        {
+          "max_abs_error": 0.03678370799694747,
+          "max_abs_z": 0.9735480065270059,
+          "p": 0.1
+        },
+        {
+          "max_abs_error": 0.04320373052631582,
+          "max_abs_z": 1.7228733617316585,
+          "p": 0.2
+        }
+      ],
+      "max_abs_error": 0.04320373052631582,
+      "max_abs_z": 1.7228733617316585,
+      "n_trials": 20
+    },
+    "e2": {
+      "aa": {
+        "ci95": [
+          0.020405632066152306,
+          0.07693206820093293
+        ],
+        "false_alarms": 8,
+        "p": 0.1,
+        "rate": 0.04
+      },
+      "ab": {
+        "ci95": [
+          0.9042130012276914,
+          0.9690146582965411
+        ],
+        "detections": 189,
+        "p_baseline": 0.05,
+        "p_candidate": 0.15,
+        "power": 0.945
+      },
+      "pairs": 200,
+      "policy": {
+        "alpha": 0.05,
+        "k": 3,
+        "max_drop": 0.1,
+        "min_pass_hat_k": null,
+        "require_significance": true
+      },
+      "trials_per_task": 5
+    },
+    "env_json": "results/calibration/env.json",
+    "label": "SYNTHETIC",
+    "validate_json": "results/calibration/validate.json"
+  },
+  "gates": [],
+  "runs": [],
+  "schema": "passk-headline-1"
+}
