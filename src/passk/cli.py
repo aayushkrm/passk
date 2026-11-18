@@ -106,16 +106,39 @@ def run_cmd(
         typer.Option("--config", "-c", help="Path to a RunConfig YAML file."),
     ],
     json_output: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
+    smoke: Annotated[
+        bool,
+        typer.Option("--smoke", help="Check the setup: one tier-1 and one tier-2 task, n=1."),
+    ] = False,
+    out: Annotated[
+        str,
+        typer.Option("--out", help="Directory that receives <run_id>/. Default: runs."),
+    ] = "runs",
 ) -> None:
-    """Run tasks x trials for one configuration and write runs/<run_id>/."""
+    """Run tasks x trials for one configuration and write <out>/<run_id>/."""
 
     def body() -> int:
         run_config = _load_run_config(Path(config))
-        report = runner.run(run_config)
+        deps: runner.RunDeps | None = None
+        if smoke:
+            from passk.envs.base import load_tasks
+
+            tasks = sorted(load_tasks(run_config.tasks_glob), key=lambda t: t.id)
+            picked = [t for t in tasks if t.tier == 1][:1] + [t for t in tasks if t.tier == 2][:1]
+            deps = runner.RunDeps(tasks=picked)
+            run_config = run_config.model_copy(
+                update={"n_trials": 1, "run_id": f"{run_config.run_id}-smoke"}
+            )
+        report = runner.run(run_config, out_root=Path(out), deps=deps)
         if json_output:
             _emit_json(report.model_dump(mode="json"))
             return 0
-        typer.echo(f"run {report.run_id}: {len(report.tasks)} tasks, {run_config.n_trials} trials")
+        if report.env_info.get("synthetic") is True:
+            typer.echo(f"{DEMO_LABEL}: scripted agent, not a model result")
+        typer.echo(
+            f"run {report.run_id}: {len(report.tasks)} tasks, {run_config.n_trials} trials "
+            f"-> {Path(out) / report.run_id}"
+        )
         for k, value in _pass_summary(report).items():
             typer.echo(f"  pass^{k} {value:.3f}")
         return 0
@@ -315,6 +338,12 @@ def validate_cmd(
     pairs: Annotated[
         int, typer.Option("--pairs", help="A/A and A/B comparisons in E2.")
     ] = validate.DEFAULT_PAIRS,
+    workers: Annotated[
+        int, typer.Option("--workers", help="Worker processes for the simulations.")
+    ] = 2,
+    smoke: Annotated[
+        bool, typer.Option("--smoke", help="Quick check: 10 pairs. Same E1, fewer E2 pairs.")
+    ] = False,
     json_output: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
 ) -> None:
     """Check estimator and gate calibration (experiments E1 and E2)."""
@@ -324,9 +353,15 @@ def validate_cmd(
 
         tasks = load_tasks(PACKAGED_TASKS)
         policy = GatePolicy(k=k, max_drop=max_drop)
-        with tempfile.TemporaryDirectory(prefix="passk-validate-") as scratch:
-            simulate = validate.make_labstock_simulator(PACKAGED_TASKS, Path(scratch))
-            result = validate.run_validation(simulate, tasks, policy=policy, pairs=pairs)
+        n_pairs = 10 if smoke else pairs
+        result = validate.run_validation(
+            validate.make_labstock_simulator(PACKAGED_TASKS, validate.N_TRIALS),
+            tasks,
+            policy=policy,
+            pairs=n_pairs,
+            e2_simulate=validate.make_labstock_simulator(PACKAGED_TASKS, validate.E2_TRIALS),
+            workers=workers,
+        )
         if json_output:
             _emit_json(result)
             return 0
@@ -335,11 +370,12 @@ def validate_cmd(
             [
                 f"{level['p']:.2f}",
                 f"{level['max_abs_error']:.4f}",
+                f"{level['max_abs_z']:.2f}",
             ]
             for level in result["e1"]["levels"]
         ]
-        typer.echo("E1 estimator, max absolute error of pass^k over k=1..5")
-        typer.echo(_table(["p", "max abs error"], e1_rows))
+        typer.echo("E1 estimator, max absolute error of pass^k over k=1..5 (n=20 per task)")
+        typer.echo(_table(["p", "max abs error", "max |z|"], e1_rows))
         e2 = result["e2"]
         typer.echo("")
         typer.echo(f"E2 gate: policy k={e2['policy']['k']}, max_drop={e2['policy']['max_drop']}")

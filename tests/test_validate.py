@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 
@@ -157,3 +159,41 @@ def test_run_validation_is_seeded() -> None:
 def test_run_validation_rejects_zero_pairs() -> None:
     with pytest.raises(ValueError, match="pairs"):
         run_validation(lambda p, s: _fake_report(p, s), TASKS, pairs=0)
+
+
+def test_estimator_variance_matches_brute_force_sum() -> None:
+    n, q, k = 5, 0.6, 3
+    expected = 0.0
+    mean = 0.0
+    for c in range(n + 1):
+        pmf = math.comb(n, c) * q**c * (1 - q) ** (n - c)
+        est = pass_hat_from_counts(n, c, k)
+        mean += pmf * est
+        expected += pmf * est * est
+    assert validate.estimator_variance(n, q, k) == pytest.approx(expected - mean * mean)
+    assert mean == pytest.approx(q**k)
+
+
+def test_expected_standard_error_is_zero_for_deterministic_tasks() -> None:
+    assert validate.expected_standard_error(TASKS, 0.0, 2, n=20) == 0.0
+    assert validate.expected_standard_error(TASKS, 0.2, 2, n=20) > 0.0
+
+
+def test_e2_records_trials_per_task_and_uses_its_own_simulator() -> None:
+    seen: list[int] = []
+
+    def e2_sim(p: float, s: int) -> RunReport:
+        report = _fake_report(p, s, n=5)
+        seen.append(report.tasks[0].n)
+        return report
+
+    result = run_validation(
+        lambda p, s: _fake_report(p, s),
+        TASKS,
+        pairs=3,
+        base_seed=1,
+        e2_simulate=e2_sim,
+    )
+    assert result["e2"]["trials_per_task"] == 5
+    assert set(seen) == {5}
+    assert len(seen) == 12  # three A/A and three A/B pairs, two runs each
