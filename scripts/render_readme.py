@@ -50,7 +50,11 @@ from passk.schema import RunReport, Trajectory  # noqa: E402
 
 
 def _rel(path: Path) -> str:
-    return path.relative_to(REPO).as_posix()
+    """Repo-relative path for links. A file outside the repository is named by its base name."""
+    try:
+        return path.relative_to(REPO).as_posix()
+    except ValueError:
+        return path.name
 
 
 def _interval(item: dict[str, Any] | None) -> str:
@@ -132,6 +136,12 @@ def _run_record(report: RunReport, path: Path) -> dict[str, Any]:
     return {
         "run_id": report.run_id,
         "label": SYNTHETIC if is_synthetic(report.env_info) else "model",
+        "complete": report.complete,
+        "stop_reason": report.stop_reason,
+        "reset_at": report.reset_at,
+        "episodes_total": report.episodes_total
+        if report.episodes_total is not None
+        else len(report.tasks) * report.config.n_trials,
         "agent": _agent_label(report),
         "agent_kind": report.config.agent.kind,
         "transport": report.config.transport,
@@ -257,10 +267,22 @@ def _calibration_block(cal: dict[str, Any]) -> list[str]:
 
 def _run_block(run: dict[str, Any]) -> list[str]:
     head = f"**{run['label']}: `{run['run_id']}`**"
+    if not run["complete"]:
+        head = f"**{run['label']} PARTIAL: `{run['run_id']}`**"
     costs = run["costs"]
     lines = [
         head,
         "",
+    ]
+    if not run["complete"]:
+        reset = f" The provider limit resets at {run['reset_at']} (UTC)." if run["reset_at"] else ""
+        lines += [
+            f"> **PARTIAL RUN.** Stopped before every episode finished ({run['stop_reason']}). "
+            f"{run['episodes']} of {run['episodes_total']} episodes are included. This is not a "
+            f"full result.{reset}",
+            "",
+        ]
+    lines += [
         f"Agent: {run['agent']}. Transport: {run['transport']}. "
         f"Temperature: {run['temperature']}. Prompt: {run['prompt_variant']}. "
         f"{run['tasks']} tasks x {run['trials_per_task']} trials = {run['episodes']} episodes. "

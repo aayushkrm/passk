@@ -19,6 +19,9 @@
     {% if synthetic %}
     <div class="banner" role="note"><strong>SYNTHETIC.</strong>{{ banner_text }}</div>
     {% endif %}
+    {% if partial %}
+    <div class="banner" role="alert"><strong>PARTIAL RUN.</strong> {{ partial_text }}</div>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
   <footer class="foot">

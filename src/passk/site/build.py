@@ -198,6 +198,8 @@ def _run_context(report: RunReport, trajectories: list[Trajectory] | None) -> di
     )
     return {
         "synthetic": is_synthetic(report.env_info),
+        "partial": not report.complete,
+        "partial_text": partial_text(report),
         "run_id": report.run_id,
         "agent_kind": report.config.agent.kind,
         "transport": report.config.transport,
@@ -234,13 +236,36 @@ def _run_html(
     )
 
 
+def partial_text(report: RunReport) -> str:
+    """Return the sentence that says a report is partial, or an empty string when it is complete.
+
+    Args:
+        report: Any run report.
+
+    Returns:
+        The explanation, including the reset time when the provider gave one.
+    """
+    if report.complete:
+        return ""
+    text = (
+        f"The run stopped before every episode finished ({report.stop_reason}). "
+        "The results cover the finished episodes only and are not a full result."
+    )
+    if report.reset_at:
+        text += f" The provider limit resets at {report.reset_at} (UTC)."
+    return text
+
+
 def _markdown(report: RunReport) -> str:
     rows = _pass_rows(report)
     synthetic = is_synthetic(report.env_info)
     lines = [f"# passk run {report.run_id}", ""]
     if synthetic:
         lines += [f"> **SYNTHETIC**:{SYNTHETIC_BANNER}", ""]
+    if not report.complete:
+        lines += [f"> **PARTIAL RUN**: {partial_text(report)}", ""]
     lines += [
+        f"- Complete: {'yes' if report.complete else 'no'}",
         f"- Agent: `{report.config.agent.kind}`",
         f"- Transport: `{report.config.transport}`",
         f"- Tasks: {len(report.tasks)}",
@@ -336,6 +361,7 @@ def _index_html(entries: list[_Entry]) -> str:
                 "run_id": entry.report.run_id,
                 "slug": entry.slug,
                 "synthetic": is_synthetic(entry.report.env_info),
+                "partial": not entry.report.complete,
                 "agent_kind": entry.report.config.agent.kind,
                 "n_tasks": len(entry.report.tasks),
                 "n_trials": entry.report.config.n_trials,
@@ -353,6 +379,8 @@ def _index_html(entries: list[_Entry]) -> str:
         css=_css(),
         synthetic=any_synthetic,
         banner_text=SYNTHETIC_BANNER,
+        partial=False,
+        partial_text="",
         runs=runs,
         k_values=all_k,
         curves_svg=curves_svg(curves, "pass^k against k for every run"),
@@ -372,6 +400,8 @@ def _llms_text(entries: list[_Entry]) -> str:
     for entry in entries:
         report = entry.report
         label = " (SYNTHETIC)" if is_synthetic(report.env_info) else ""
+        if not report.complete:
+            label += " (PARTIAL)"
         pieces = [f"pass^{r['k']} {r['pass_hat_k']:.3f}" for r in _pass_rows(report)]
         lines.append(f"- {report.run_id}{label}: " + ", ".join(pieces))
         lines.append(f"  - page: runs/{entry.slug}/index.html")

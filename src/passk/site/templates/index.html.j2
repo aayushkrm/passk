@@ -14,7 +14,7 @@
     <tbody>
     {% for run in runs %}
       <tr>
-        <th scope="row"><a href="runs/{{ run.slug }}/index.html">{{ run.run_id }}</a>{% if run.synthetic %} <span class="badge">SYNTHETIC</span>{% endif %}</th>
+        <th scope="row"><a href="runs/{{ run.slug }}/index.html">{{ run.run_id }}</a>{% if run.synthetic %} <span class="badge">SYNTHETIC</span>{% endif %}{% if run.partial %} <span class="badge">PARTIAL</span>{% endif %}</th>
         <td><code>{{ run.agent_kind }}</code></td>
         <td>{{ run.n_tasks }}</td>
         <td>{{ run.n_trials }}</td>
