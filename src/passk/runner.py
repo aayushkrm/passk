@@ -128,7 +128,7 @@ def build_agent(config: AgentConfig) -> Agent:
     params = dict(config.params)
     if config.kind == "llamacpp":
         if "model_path" in params:
-            params["model_path"] = Path(params["model_path"])
+            params["model_path"] = Path(params["model_path"]).expanduser()
         return LlamaCppAgent(**params)
     if config.kind == "openai_compat":
         return OpenAICompatAgent(**params)
@@ -229,6 +229,7 @@ def _run_episode(
     agent_id: str,
     goal_checker: GoalChecker,
     classifier: Classifier,
+    tools: list[ToolSpec] | None = None,
 ) -> tuple[Trajectory, list[float | None]]:
     """Run one episode and return its trajectory and per-step tool latencies.
 
@@ -240,7 +241,7 @@ def _run_episode(
     if callable(begin):
         begin(seed)
     handle = transport.reset(task, seed)
-    tools: list[ToolSpec] = transport.tools()
+    listing = tools if tools is not None else transport.tools()
     steps: list[Step] = []
     tool_latencies: list[float | None] = []
     claimed_done = False
@@ -249,7 +250,7 @@ def _run_episode(
         if hasattr(agent, "last_call"):
             agent.last_call = None
         t_act = time.perf_counter()
-        action: AgentAction = agent.act(task, list(steps), tools)
+        action: AgentAction = agent.act(task, list(steps), listing)
         act_s = time.perf_counter() - t_act
         info = getattr(agent, "last_call", None)
         in_tokens = getattr(info, "input_tokens", None)
@@ -325,10 +326,13 @@ def _aggregate(
     config: RunConfig,
     trajectories: Sequence[Trajectory],
     tasks: Sequence[Task],
+    *,
+    bootstrap: bool = True,
 ) -> tuple[list[TaskStats], dict[str, dict[int, dict[str, float]]], dict[str, int], dict[str, Any]]:
     """Aggregate episodes into per-task stats, summary intervals, failure and token totals.
 
-    Only k values with ``1 <= k <= n_trials`` are reported; larger ones are skipped.
+    Only k values with ``1 <= k <= n_trials`` are reported; larger ones are skipped. With
+    ``bootstrap=False`` the summary is left empty, which saves the resampling.
     """
     by_task: dict[str, list[Trajectory]] = {task.id: [] for task in tasks}
     for traj in trajectories:
@@ -354,7 +358,7 @@ def _aggregate(
         )
 
     summary: dict[str, dict[int, dict[str, float]]] = {}
-    for metric in ("pass_at_k", "pass_hat_k"):
+    for metric in ("pass_at_k", "pass_hat_k") if bootstrap else ():
         summary[metric] = {}
         for k in sorted({k for s in stats for k in getattr(s, metric)}):
             values = [getattr(s, metric)[k] for s in stats if k in getattr(s, metric)]
@@ -392,6 +396,8 @@ def run(
     out_root: Path = Path("runs"),
     *,
     deps: RunDeps | None = None,
+    write: bool = True,
+    light: bool = False,
 ) -> RunReport:
     """Run every task matching ``config.tasks_glob`` for ``config.n_trials`` trials.
 
@@ -405,9 +411,12 @@ def run(
         config: Run configuration.
         out_root: Directory under which ``<run_id>/`` is created.
         deps: Optional collaborator overrides (used by tests).
+        write: If False, nothing is written and the run directory is not checked.
+        light: If True, skip the spans, the environment record and the summary bootstrap.
+            The per-task statistics are still computed. Used by ``passk validate``.
 
     Returns:
-        The aggregated ``RunReport`` (also written to ``report.json``).
+        The aggregated ``RunReport`` (also written to ``report.json`` when ``write``).
 
     Raises:
         ValueError: On an invalid run id, ``n_trials < 1`` or no matching tasks.
@@ -419,7 +428,7 @@ def run(
     if not RUN_ID_PATTERN.fullmatch(config.run_id):
         raise ValueError(f"run_id {config.run_id!r} must be a plain name (letters, digits, ._-)")
     run_dir = Path(out_root) / config.run_id
-    if run_dir.exists() and any(run_dir.iterdir()):
+    if write and run_dir.exists() and any(run_dir.iterdir()):
         raise FileExistsError(f"{run_dir} already holds files; choose a new run_id")
 
     if deps.tasks is not None:
@@ -445,27 +454,43 @@ def run(
     trajectories: list[Trajectory] = []
     span_records: list[dict[str, Any]] = []
     try:
+        # The tool list does not change between episodes, so it is fetched once per run.
+        tool_listing = transport.tools()
         for task in tasks:
             for trial in range(config.n_trials):
                 traj, tool_latencies = _run_episode(
-                    config, task, trial, agent, transport, agent_id, goal_checker, classifier
+                    config,
+                    task,
+                    trial,
+                    agent,
+                    transport,
+                    agent_id,
+                    goal_checker,
+                    classifier,
+                    tools=tool_listing,
                 )
                 trajectories.append(traj)
-                span_records.extend(
-                    trace.build_spans(
-                        traj,
-                        request_model=model,
-                        provider_name=provider,
-                        tool_latencies_s=tool_latencies,
+                if not light:
+                    span_records.extend(
+                        trace.build_spans(
+                            traj,
+                            request_model=model,
+                            provider_name=provider,
+                            tool_latencies_s=tool_latencies,
+                        )
                     )
-                )
     finally:
         close = getattr(transport, "close", None)
         if callable(close):
             close()
 
-    stats, summary, failure_totals, tokens = _aggregate(config, trajectories, tasks)
-    env_info = environment_record()
+    stats, summary, failure_totals, tokens = _aggregate(
+        config, trajectories, tasks, bootstrap=not light
+    )
+    env_info = {} if light else environment_record()
+    if config.agent.kind in SCRIPTED_CLASSES:
+        # Scripted agents are not models. Every report built from them is labelled SYNTHETIC.
+        env_info["synthetic"] = True
     agent_meta = getattr(agent, "metadata", None)
     if isinstance(agent_meta, dict):
         env_info["agent"] = agent_meta
@@ -481,6 +506,8 @@ def run(
         wall_s=time.perf_counter() - started,
     )
 
+    if not write:
+        return report
     run_dir.mkdir(parents=True, exist_ok=True)
     _atomic_write_text(
         run_dir / "trajectories.jsonl",
