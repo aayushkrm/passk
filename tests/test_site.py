@@ -169,7 +169,8 @@ def test_render_report_formats(tmp_path: Path) -> None:
 
 def test_render_report_marks_failure_categories_in_order() -> None:
     md = render_report(_baseline(), "md")
-    names = [c.value for c in FailureCategory]
+    names = [c.value for c in FailureCategory if c != FailureCategory.SUCCESS]
+    assert "| success |" not in md  # a pass is not a failure bar
     positions = [md.index(f"| {name} |") for name in names]
     assert positions == sorted(positions)
 

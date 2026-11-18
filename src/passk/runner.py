@@ -23,7 +23,6 @@ import importlib
 import importlib.util
 import json
 import os
-import platform
 import re
 import statistics
 import time
@@ -31,7 +30,6 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 from passk import metrics, taxonomy, trace
@@ -67,7 +65,6 @@ SCRIPTED_CLASSES: dict[str, str] = {
 """Agent kinds served by ``passk.agents.scripted`` and the class each one names."""
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ENVINFO_PATH = REPO_ROOT / "scripts" / "envinfo.py"
 
 GoalChecker = Callable[[Task, dict[str, Any], list[str]], bool]
 Classifier = Callable[..., FailureCategory]
@@ -170,36 +167,49 @@ def _default_check_goal(task: Task, final_state: dict[str, Any], violations: lis
     return bool(check_goal(task, final_state, violations))
 
 
-def _load_envinfo() -> ModuleType | None:
-    """Import ``scripts/envinfo.py`` by path, or return None when it is not present."""
-    if not ENVINFO_PATH.is_file():
-        return None
-    spec = importlib.util.spec_from_file_location("passk_envinfo", ENVINFO_PATH)
-    if spec is None or spec.loader is None:
-        return None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def environment_record() -> dict[str, Any]:
-    """Return the ``env.json`` record: the ``scripts/envinfo.py`` record when available.
+    """Return the ``env.json`` record from ``passk.envinfo``.
 
-    Falls back to a minimal stdlib record (Python and OS only, no host identifiers) when the
-    script is absent, for example in an installed wheel.
+    The record is the same in a source checkout and in an installed wheel: git values are
+    None outside a git work tree, and nothing else depends on the checkout. The record holds
+    no hostname, username or path.
 
     Returns:
-        A JSON-serialisable dict with no hostname, username or paths.
+        A JSON-serialisable dict.
     """
-    module = _load_envinfo()
-    if module is not None:
-        record: dict[str, Any] = module.collect(REPO_ROOT)
-        return record
-    return {
-        "envinfo": "scripts/envinfo.py not found; minimal record",
-        "python": {"version": platform.python_version()},
-        "os": {"os": platform.system(), "arch": platform.machine()},
-    }
+    from passk import envinfo
+
+    record: dict[str, Any] = envinfo.collect(REPO_ROOT)
+    return record
+
+
+def portable_glob(tasks_glob: str) -> str:
+    """Return a task glob that is safe to store in a committed report.
+
+    An absolute glob is made relative to the first root it sits under: this repository,
+    the working directory, or the parent of the installed ``passk`` package. A glob outside
+    all of them is reduced to ``<external>/<file name pattern>``, so no user path is stored.
+    Relative globs are returned unchanged.
+
+    Args:
+        tasks_glob: The glob as given in the run config.
+
+    Returns:
+        A glob with no leading ``/`` and no home or user directory in it.
+    """
+    if not Path(tasks_glob).is_absolute():
+        return tasks_glob
+    target = Path(os.path.abspath(tasks_glob))
+    home = Path.home().resolve()
+    roots = [REPO_ROOT, Path.cwd(), Path(__file__).resolve().parents[1]]
+    for root in roots:
+        if root.resolve() in (Path(root.anchor), home):
+            continue  # relative to / or to home would keep the user's path
+        try:
+            return target.relative_to(os.path.abspath(root)).as_posix()
+        except ValueError:
+            continue
+    return f"<external>/{target.name}"
 
 
 def _model_name(agent: Any, config: AgentConfig) -> str:
@@ -331,41 +341,27 @@ def _aggregate(
 ) -> tuple[list[TaskStats], dict[str, dict[int, dict[str, float]]], dict[str, int], dict[str, Any]]:
     """Aggregate episodes into per-task stats, summary intervals, failure and token totals.
 
-    Only k values with ``1 <= k <= n_trials`` are reported; larger ones are skipped. With
-    ``bootstrap=False`` the summary is left empty, which saves the resampling.
+    The per-task statistics and the summary come from ``metrics.aggregate_task`` and
+    ``metrics.summarize_tasks``, the same functions the unit tests check. ``failures`` and
+    ``failure_totals`` count unsuccessful trials only. With ``bootstrap=False`` the summary is
+    left empty, which saves the resampling.
     """
     by_task: dict[str, list[Trajectory]] = {task.id: [] for task in tasks}
     for traj in trajectories:
         by_task[traj.task_id].append(traj)
-    tier_of = {task.id: task.tier for task in tasks}
 
-    stats: list[TaskStats] = []
-    for task in tasks:
-        trajs = by_task[task.id]
-        n = len(trajs)
-        c = sum(1 for t in trajs if t.success)
-        ks = [k for k in config.k_values if 1 <= k <= n]
-        stats.append(
-            TaskStats(
-                task_id=task.id,
-                tier=tier_of[task.id],
-                n=n,
-                c=c,
-                pass_at_k={k: metrics.pass_at_k(n, c, k) for k in ks},
-                pass_hat_k={k: metrics.pass_hat_k(n, c, k) for k in ks},
-                failures=dict(sorted(Counter(t.failure.value for t in trajs).items())),
-            )
-        )
-
+    stats: list[TaskStats] = [
+        metrics.aggregate_task(task.id, task.tier, by_task[task.id], config.k_values)
+        for task in tasks
+    ]
     summary: dict[str, dict[int, dict[str, float]]] = {}
-    for metric in ("pass_at_k", "pass_hat_k") if bootstrap else ():
-        summary[metric] = {}
-        for k in sorted({k for s in stats for k in getattr(s, metric)}):
-            values = [getattr(s, metric)[k] for s in stats if k in getattr(s, metric)]
-            mean, low, high = metrics.bootstrap_ci(values, seed=config.base_seed)
-            summary[metric][k] = {"mean": mean, "ci_low": low, "ci_high": high}
+    if bootstrap:
+        summary = metrics.summarize_tasks(stats, config.k_values, seed=config.base_seed)
 
-    failure_totals = dict(sorted(Counter(t.failure.value for t in trajectories).items()))
+    totals: Counter[str] = Counter()
+    for task_stats in stats:
+        totals.update(task_stats.failures)
+    failure_totals = dict(sorted(totals.items()))
 
     steps = [s for t in trajectories for s in t.steps]
     in_values = [s.input_tokens for s in steps if s.input_tokens is not None]
@@ -497,7 +493,7 @@ def run(
 
     report = RunReport(
         run_id=config.run_id,
-        config=config,
+        config=config.model_copy(update={"tasks_glob": portable_glob(config.tasks_glob)}),
         env_info=env_info,
         tasks=stats,
         summary=summary,

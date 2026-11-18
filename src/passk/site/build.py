@@ -93,8 +93,9 @@ def _pass_rows(report: RunReport) -> list[dict[str, Any]]:
 
 
 def _failure_items(report: RunReport) -> list[tuple[str, int]]:
-    known = [category.value for category in FailureCategory]
-    extra = sorted(set(report.failure_totals) - set(known))
+    """Failure categories with their counts. ``success`` is not a failure and is left out."""
+    known = [c.value for c in FailureCategory if c != FailureCategory.SUCCESS]
+    extra = sorted(set(report.failure_totals) - set(known) - {FailureCategory.SUCCESS.value})
     return [(name, report.failure_totals.get(name, 0)) for name in known + extra]
 
 

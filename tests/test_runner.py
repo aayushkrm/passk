@@ -350,12 +350,54 @@ def test_failure_categories_and_totals(tmp_path: Path) -> None:
             [make_task("t01"), make_task("t02", max_turns=2)],
         ),
     )
-    assert report.failure_totals == {"max_turns": 2, "success": 2}
+    assert report.failure_totals == {"max_turns": 2}
     by_task = {t.task_id: t for t in report.tasks}
     assert by_task["t01"].c == 2
     assert by_task["t02"].c == 0
-    assert by_task["t01"].failures == {"success": 2}
+    assert by_task["t01"].failures == {}
     assert by_task["t02"].failures == {"max_turns": 2}
+
+
+def test_runner_failures_match_the_metrics_helpers(tmp_path: Path) -> None:
+    # One definition of failures: the runner's per-task counts, the run totals and the
+    # summary must equal what metrics.aggregate_task and summarize_tasks compute from the
+    # trajectories written to disk.
+    from passk import metrics
+    from passk.schema import Trajectory
+
+    def every_other(task: Task, history: list[Step]) -> AgentAction:
+        if task.id == "t01":
+            return search_then_final(task, history)
+        return never_final(task, history)
+
+    config = make_config("helpers", n_trials=3)
+    report = run(
+        config,
+        tmp_path,
+        deps=make_deps(
+            FakeAgent(every_other),
+            FakeTransport(),
+            [make_task("t01"), make_task("t02", max_turns=2)],
+        ),
+    )
+    lines = (tmp_path / "helpers" / "trajectories.jsonl").read_text().splitlines()
+    trajs = [Trajectory.model_validate_json(line) for line in lines]
+    by_task: dict[str, list[Trajectory]] = {}
+    for traj in trajs:
+        by_task.setdefault(traj.task_id, []).append(traj)
+    expected = [
+        metrics.aggregate_task(s.task_id, s.tier, by_task[s.task_id], config.k_values)
+        for s in report.tasks
+    ]
+    assert report.tasks == expected
+    totals: dict[str, int] = {}
+    for stats in expected:
+        for name, count in stats.failures.items():
+            totals[name] = totals.get(name, 0) + count
+    assert report.failure_totals == totals
+    assert "success" not in report.failure_totals
+    summary = metrics.summarize_tasks(expected, config.k_values, seed=config.base_seed)
+    assert report.summary == summary
 
 
 def test_pass_at_and_hat_k_are_reported_for_valid_k_only(tmp_path: Path) -> None:

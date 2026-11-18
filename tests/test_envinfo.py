@@ -1,29 +1,18 @@
-"""Tests for scripts/envinfo.py. No network; no hostname or username in output."""
+"""Tests for passk.envinfo. No network; no hostname or username in output."""
 
 from __future__ import annotations
 
 import getpass
-import importlib.util
 import json
 import socket
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
+from passk import envinfo  # the implementation lives in the package
+
 REPO = Path(__file__).resolve().parents[1]
 
-
-def load_envinfo() -> ModuleType:
-    """Import scripts/envinfo.py by path (scripts is not a package)."""
-    spec = importlib.util.spec_from_file_location("envinfo", REPO / "scripts" / "envinfo.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-envinfo = load_envinfo()
 
 PROC_CPUINFO = """processor\t: 0
 vendor_id\t: GenuineIntel
