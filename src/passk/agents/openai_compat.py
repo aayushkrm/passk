@@ -147,7 +147,7 @@ class OpenAICompatAgent:
             backoff_base_s: Base delay of the exponential backoff, in seconds.
             backoff_max_s: Cap on a single backoff delay, in seconds.
             timeout_s: Per-request timeout, in seconds.
-            prompt_variant: ``v1`` (with policy section) or ``v2`` (terse, no policy).
+            prompt_variant: ``v1`` (with policy section) or ``v2`` (identical without it).
             provider_name: Value for ``gen_ai.provider.name`` in spans.
             post: HTTP callable. Defaults to ``urllib_post``. Tests inject fakes.
             sleep: Sleep function used for pacing and backoff. Tests inject a recorder.

@@ -25,6 +25,9 @@ PromptVariant = Literal["v1", "v2"]
 SCHEMA_ERROR_TOOL = "__schema_error__"
 """Reserved tool name that marks an agent output that failed validation."""
 
+NO_TOOL = "none"
+"""Value of the ``tool`` field in a ``final`` action."""
+
 SCHEMA_ERROR_PREFIX = "schema_error: "
 """Prefix of ``ToolResult.error`` for a schema-error step."""
 
@@ -59,9 +62,11 @@ class ModelCallInfo:
 def action_json_schema(tool_names: Sequence[str]) -> dict[str, Any]:
     """Build the flat JSON schema that constrains the model's action output.
 
-    Shape: ``{"kind": "tool_call" | "final", "tool": enum(tool_names),
-    "arguments": object, "message": string}``. Kept flat to limit grammar compile time.
-    Only ``kind`` is required by the schema; ``parse_action`` checks the rest.
+    Shape: ``{"kind": "tool_call" | "final", "tool": enum(tool_names + "none"),
+    "arguments": object, "message": string}``. All four keys are required. For a ``final``
+    action the model writes ``"tool": "none"``, ``"arguments": {}`` and the reply in
+    ``message``. For a ``tool_call`` it writes the tool name, its arguments and an empty
+    ``message``. Kept flat to limit grammar compile time. ``parse_action`` checks the values.
 
     Args:
         tool_names: Names of the tools the model may call.
@@ -78,11 +83,11 @@ def action_json_schema(tool_names: Sequence[str]) -> dict[str, Any]:
         "type": "object",
         "properties": {
             "kind": {"type": "string", "enum": ["tool_call", "final"]},
-            "tool": {"type": "string", "enum": list(tool_names)},
+            "tool": {"type": "string", "enum": [*tool_names, NO_TOOL]},
             "arguments": {"type": "object"},
             "message": {"type": "string"},
         },
-        "required": ["kind"],
+        "required": ["kind", "tool", "arguments", "message"],
         "additionalProperties": False,
     }
 
@@ -93,20 +98,14 @@ def _param_names(spec: ToolSpec) -> list[str]:
     return list(properties) if isinstance(properties, dict) else []
 
 
-def _first_sentence(text: str) -> str:
-    """Return the first sentence of ``text`` without its final period."""
-    head = text.strip().split(". ", 1)[0]
-    return head.rstrip(".")
+def render_tools(tools: Sequence[ToolSpec]) -> str:
+    """Render the tool list for the system prompt, with each full description.
 
-
-def render_tools(tools: Sequence[ToolSpec], prompt_variant: PromptVariant) -> str:
-    """Render the tool list for the system prompt.
-
-    ``v1`` keeps each full description. ``v2`` keeps only the first sentence (terse).
+    The two prompt variants differ only in the policy section, so this is the same for v1
+    and v2.
 
     Args:
         tools: Tools available to the agent.
-        prompt_variant: Prompt variant.
 
     Returns:
         One line per tool, ``- name(param, ...): description``.
@@ -114,12 +113,7 @@ def render_tools(tools: Sequence[ToolSpec], prompt_variant: PromptVariant) -> st
     lines: list[str] = []
     for spec in tools:
         params = ", ".join(_param_names(spec))
-        description = (
-            spec.description.strip()
-            if prompt_variant == "v1"
-            else _first_sentence(spec.description)
-        )
-        lines.append(f"- {spec.name}({params}): {description}")
+        lines.append(f"- {spec.name}({params}): {spec.description.strip()}")
     return "\n".join(lines)
 
 
@@ -128,7 +122,7 @@ def system_prompt(tools: Sequence[ToolSpec], prompt_variant: PromptVariant) -> s
 
     Args:
         tools: Tools available to the agent.
-        prompt_variant: ``v1`` adds the policy section; ``v2`` does not.
+        prompt_variant: ``v1`` adds the policy section; ``v2`` is identical without it.
 
     Returns:
         The system message text.
@@ -136,11 +130,12 @@ def system_prompt(tools: Sequence[ToolSpec], prompt_variant: PromptVariant) -> s
     parts = [
         "You operate a lab inventory through tools. Reply with exactly one JSON object "
         "and no other text.",
-        'Fields: "kind" is "tool_call" to call a tool or "final" to finish. "tool" is the '
-        'tool name (for tool_call). "arguments" is a JSON object with the tool arguments. '
-        '"message" is your final reply to the user (for final).',
+        'Fields, all four required: "kind" is "tool_call" to call a tool or "final" to '
+        'finish. "tool" is the tool name for tool_call, and "none" for final. "arguments" '
+        'is a JSON object with the tool arguments, and {} for final. "message" is empty for '
+        "tool_call and is your final reply to the user for final.",
         "Tools:",
-        render_tools(tools, prompt_variant),
+        render_tools(tools),
     ]
     if prompt_variant == "v1":
         parts.append("Policy:")
@@ -151,14 +146,18 @@ def system_prompt(tools: Sequence[ToolSpec], prompt_variant: PromptVariant) -> s
 def _render_assistant(action: AgentAction) -> str:
     """Render a past action as the assistant message that produced it."""
     if action.kind == "final":
-        return json.dumps({"kind": "final", "message": action.message or ""})
+        return json.dumps(
+            {"kind": "final", "tool": NO_TOOL, "arguments": {}, "message": action.message or ""}
+        )
     call = action.tool_call
     if call is None:
-        return json.dumps({"kind": "tool_call"})
+        return json.dumps({"kind": "tool_call", "tool": NO_TOOL, "arguments": {}, "message": ""})
     if call.name == SCHEMA_ERROR_TOOL:
         raw = call.arguments.get("raw", "")
         return str(raw)
-    return json.dumps({"kind": "tool_call", "tool": call.name, "arguments": call.arguments})
+    return json.dumps(
+        {"kind": "tool_call", "tool": call.name, "arguments": call.arguments, "message": ""}
+    )
 
 
 def _render_result(result: ToolResult) -> str:
@@ -186,8 +185,7 @@ def build_messages(
         task: Task being solved.
         history: Steps taken so far.
         tools: Tools available to the agent.
-        prompt_variant: ``v1`` includes the policy section; ``v2`` has terse tool
-            descriptions and no policy section.
+        prompt_variant: ``v1`` includes the policy section; ``v2`` is identical without it.
 
     Returns:
         Chat messages in the OpenAI-style ``{"role", "content"}`` format.

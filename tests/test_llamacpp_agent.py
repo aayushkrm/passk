@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from passk.agents import SCHEMA_ERROR_TOOL, action_json_schema, build_messages
+from passk.agents import SCHEMA_ERROR_TOOL, action_json_schema, build_messages, parse_action
 from passk.agents.llamacpp import LlamaCppAgent
 from passk.schema import AgentAction, Step, Task, ToolCall, ToolResult, ToolSpec
 
@@ -152,7 +152,7 @@ def test_response_format_carries_flat_schema_with_tool_enum() -> None:
     response_format = call["response_format"]
     assert response_format["type"] == "json_object"
     schema = response_format["schema"]
-    assert schema["properties"]["tool"]["enum"] == ["search_compounds", "place_order"]
+    assert schema["properties"]["tool"]["enum"] == ["search_compounds", "place_order", "none"]
     assert set(schema["properties"]) == {"kind", "tool", "arguments", "message"}
     assert schema["properties"]["kind"]["enum"] == ["tool_call", "final"]
     assert call["temperature"] == 0.7
@@ -187,12 +187,56 @@ def test_policy_section_only_in_v1() -> None:
     assert "request_approval" not in v2
 
 
-def test_v2_tool_descriptions_are_terse() -> None:
+def test_v2_is_v1_without_the_policy_section() -> None:
     v1 = build_messages(make_task(), [], TOOLS, "v1")[0]["content"]
     v2 = build_messages(make_task(), [], TOOLS, "v2")[0]["content"]
-    assert "Use before ordering." in v1
-    assert "Use before ordering." not in v2
-    assert "- search_compounds(query): Search compounds by name" in v2
+    # The only difference is the policy block at the end of the system message.
+    assert v1.split("\nPolicy:\n", 1)[0] == v2
+    assert "Use before ordering." in v1 and "Use before ordering." in v2
+
+
+def test_schema_requires_all_four_keys_and_allows_none_as_tool() -> None:
+    schema = action_json_schema(["search_compounds", "place_order"])
+    assert set(schema["required"]) == {"kind", "tool", "arguments", "message"}
+    assert schema["properties"]["tool"]["enum"] == ["search_compounds", "place_order", "none"]
+    assert schema["additionalProperties"] is False
+
+
+def test_parse_final_action_with_none_tool_and_empty_arguments() -> None:
+    text = json.dumps({"kind": "final", "tool": "none", "arguments": {}, "message": "Done."})
+    action = parse_action(text, ["search_compounds"], call_id="c0")
+    assert action.kind == "final"
+    assert action.message == "Done."
+
+
+def test_parse_rejects_tool_call_with_none_as_tool() -> None:
+    text = json.dumps({"kind": "tool_call", "tool": "none", "arguments": {}, "message": ""})
+    action = parse_action(text, ["search_compounds"], call_id="c0")
+    assert action.tool_call is not None
+    assert action.tool_call.name == SCHEMA_ERROR_TOOL
+
+
+def test_history_renders_the_four_fields_for_final_and_tool_calls() -> None:
+    final = AgentAction(kind="final", message="Done.")
+    call = AgentAction(
+        kind="tool_call",
+        tool_call=ToolCall(call_id="c0", name="search_compounds", arguments={"query": "C07"}),
+    )
+    step_final = Step(index=0, action=final, result=None, latency_s=0.1)
+    step_call = Step(index=1, action=call, result=None, latency_s=0.1)
+    messages = build_messages(make_task(), [step_final, step_call], TOOLS, "v1")
+    assert json.loads(messages[2]["content"]) == {
+        "kind": "final",
+        "tool": "none",
+        "arguments": {},
+        "message": "Done.",
+    }
+    assert json.loads(messages[3]["content"]) == {
+        "kind": "tool_call",
+        "tool": "search_compounds",
+        "arguments": {"query": "C07"},
+        "message": "",
+    }
 
 
 def test_history_is_rendered_as_assistant_then_tool_result() -> None:
@@ -244,3 +288,23 @@ def test_real_gguf_smoke() -> None:
     action = agent.act(make_task(), [], TOOLS)
     assert action.kind in {"tool_call", "final"}
     assert agent.last_call is not None
+
+
+def test_system_suffix_is_appended_to_the_system_message() -> None:
+    agent, model = make_agent(
+        [json.dumps({"kind": "final", "tool": "none", "arguments": {}, "message": "ok"})],
+        system_suffix="/no_think",
+    )
+    agent.act(make_task(), [], TOOLS)
+    system = model.calls[0]["messages"][0]["content"]
+    assert system.endswith(" /no_think")
+    assert model.calls[0]["messages"][1]["role"] == "user"  # the user message is unchanged
+
+
+def test_no_suffix_leaves_the_prompt_unchanged() -> None:
+    agent, model = make_agent(
+        [json.dumps({"kind": "final", "tool": "none", "arguments": {}, "message": "ok"})]
+    )
+    agent.act(make_task(), [], TOOLS)
+    system = model.calls[0]["messages"][0]["content"]
+    assert "/no_think" not in system

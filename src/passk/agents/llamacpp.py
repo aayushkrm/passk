@@ -80,6 +80,7 @@ class LlamaCppAgent:
         prompt_variant: Literal["v1", "v2"] = "v1",
         max_tokens: int = 256,
         llama_factory: Callable[..., Any] | None = None,
+        system_suffix: str = "",
     ) -> None:
         """Load the model.
 
@@ -89,7 +90,7 @@ class LlamaCppAgent:
             n_threads: CPU threads for inference.
             temperature: Sampling temperature.
             seed: Default sampling seed, used until ``begin_episode`` is called.
-            prompt_variant: ``v1`` includes the policy section; ``v2`` is terse, no policy.
+            prompt_variant: ``v1`` includes the policy section; ``v2`` is identical without it.
             max_tokens: Maximum generated tokens per call.
             llama_factory: Callable with the ``Llama`` constructor signature. Tests inject a
                 fake here. Defaults to ``llama_cpp.Llama``, imported lazily.
@@ -100,6 +101,7 @@ class LlamaCppAgent:
         self.model_path = Path(model_path).expanduser()
         self.model_id = self.model_path.stem
         self.repo_id = repo_id
+        self.system_suffix = system_suffix
         self.model_sha256 = _sha256_of(self.model_path)
         self.n_ctx = n_ctx
         self.n_threads = n_threads
@@ -136,6 +138,7 @@ class LlamaCppAgent:
             "n_threads": self.n_threads,
             "temperature": self.temperature,
             "prompt_variant": self.prompt_variant,
+            "system_suffix": self.system_suffix,
             "n_gpu_layers": 0,
         }
 
@@ -163,6 +166,12 @@ class LlamaCppAgent:
         """
         names = [spec.name for spec in tools]
         messages = build_messages(task, history, tools, self.prompt_variant)
+        if self.system_suffix:
+            # Qwen3's thinking switch (/no_think) is a directive in the system message.
+            messages[0] = {
+                **messages[0],
+                "content": f"{messages[0]['content']} {self.system_suffix}",
+            }
         call_seed = (self._episode_seed + len(history)) % SEED_MODULUS
         started = time.perf_counter()
         response = self._llm.create_chat_completion(
