@@ -1,0 +1,18 @@
+# E4 determinism control, Qwen2.5-0.5B-Instruct Q4_K_M, T=0 (greedy), n=3 per task.
+run_id: e4-qwen2.5-0.5b-t0
+env: labstock
+tasks_glob: src/passk/tasks/labstock/*.yaml
+agent:
+  kind: llamacpp
+  params:
+    model_path: ~/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-q4_k_m.gguf
+    repo_id: Qwen/Qwen2.5-0.5B-Instruct-GGUF
+    n_ctx: 4096
+    n_threads: 4
+    temperature: 0.0
+    prompt_variant: v1
+    max_tokens: 256
+n_trials: 3
+base_seed: 2026
+transport: mcp_stdio
+k_values: [1, 2, 3, 4, 5]

@@ -1,0 +1,20 @@
+# E7 hosted arm (descriptive only), free OpenRouter model, T=0.7, n=3. The key is read from the environment and never written.
+run_id: e7-nemotron-3-ultra-t0.7
+env: labstock
+tasks_glob: src/passk/tasks/labstock/*.yaml
+agent:
+  kind: openai_compat
+  params:
+    model: nvidia/nemotron-3-ultra-550b-a55b:free
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    provider_name: openrouter
+    temperature: 0.7
+    max_tokens: 256
+    seed: 2026
+    min_interval_s: 3
+    prompt_variant: v1
+n_trials: 3
+base_seed: 2026
+transport: mcp_stdio
+k_values: [1, 2, 3, 4, 5]
