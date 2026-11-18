@@ -81,8 +81,11 @@ are in `src/passk/schema.py` and are not described again here.
 ## Local model agent
 
 - `LlamaCppAgent` calls `create_chat_completion` with a JSON-schema response format. The
-  schema is a flat object with the action kind, the tool name (an enum of the environment's
-  tools) and the arguments. A flat schema keeps grammar compilation cheap.
+  schema is a flat object with four required keys: `kind`, `tool` (an enum of the environment's
+  tools plus `"none"` for a final action), `arguments` (an object, `{}` for a final action) and
+  `message` (empty for a tool call, the reply for a final action). A flat schema keeps grammar
+  compilation cheap. Before this change only `kind` was required, and a model could omit the
+  tool name; see `docs/deviations.md`.
 - Output that does not parse becomes a schema-error action, and the episode continues.
 - The per-call seed is the episode seed plus the number of past steps. The model is loaded with
   `n_gpu_layers=0`. Each run records the model's repo id, file name and SHA-256 in `env.json`.
@@ -105,3 +108,24 @@ are in `src/passk/schema.py` and are not described again here.
   hostname, username or path.
 - Results are rendered from JSON. `scripts/render_readme.py` writes the README results block and
   `results/headline.json`. `make check-results` fails when either is stale.
+
+## Failure taxonomy rules
+
+- The checking order is: any recorded violation gives `policy_violation`; otherwise a met goal
+  gives `success`; otherwise the first of `schema_error`, `tool_error_unrecovered`,
+  `false_success_claim`, `loop`, `max_turns` and `wrong_state` that holds.
+- `success` is checked before the failure rules. An episode that meets its goal with no
+  violation passes, even if it recovered from errors on the way.
+- The schema-error rule and the tool-error rule differ on purpose. A schema error is a model
+  output that is not a valid action under the contract. The harness counts it whenever it
+  happens, even if the model later repairs it, because that output would not have been accepted
+  by a tool client. A tool error is an answer from the environment. The agent is expected to
+  handle those, so an error the agent recovered from is not a failure.
+
+## Failure counts
+
+- `TaskStats.failures` and `RunReport.failure_totals` count unsuccessful trials only. A pass
+  is not a failure category.
+- The runner computes these through `metrics.aggregate_task`, and the summary through
+  `metrics.summarize_tasks`. The unit tests check the same functions, and a runner test compares
+  a written report with them.

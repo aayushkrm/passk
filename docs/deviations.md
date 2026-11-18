@@ -54,11 +54,8 @@ and how it was checked.
 - **Observed:** in a direct check of ten calls with the 0.5B model, four outputs had no usable
   tool name or had `null` arguments. The two-task smoke run ended with schema errors on both
   tasks.
-- **Decision:** not changed. The schema is part of the pre-registered agent, and `schema_error`
-  is a measured category, so changing it now would be a prompt or schema change after the
-  pre-registration. The orchestrator must decide before E3. If `tool` is made required,
-  that is a logged amendment to `docs/prereg.md`, and the smoke runs are repeated under the new
-  schema.
+- **Decision (superseded by D14):** the orchestrator decided to make all four keys required
+  before any model run. See D14.
 
 ## At and after the pre-registration commit
 
@@ -113,3 +110,80 @@ and how it was checked.
   against the hosted endpoint. The provider-reported model id matched the requested id. The key
   was read from the environment and not written anywhere. This is a setup check, not a result,
   and its output is not in `results/`.
+
+## Pre-run amendments (orchestrator decisions, before any model result)
+
+All of these are recorded in `docs/prereg.md`, Amendment 1.
+
+### D14. Action schema: four required keys (supersedes D5)
+
+- **Change.** `action_json_schema` requires `kind`, `tool`, `arguments` and `message`. `tool`
+  is an enum of the tool names plus `"none"`, which a final action uses. `arguments` is `{}`
+  for a final action and `message` is empty for a tool call. The parser checks the values, as
+  before. History rendering uses the same four keys.
+- **Measured, first action only, 20 calls with the 0.5B model, prompt v1, temperature 0.7.**
+  Before (HEAD schema and prompt): 11 of 20 were schema errors. After: 0 of 20. The check is in
+  scratch and is not committed. It covers the first action of each episode only.
+- **Smoke (two tasks, n = 1, 0.5B).** Under the new schema, 0 of 12 steps were schema errors.
+  The failures are now semantic: wrong compound ids and repeated calls. Both tasks still
+  failed, which is a result of the model, not of the schema.
+
+### D15. Prompt v2 is v1 without the policy section
+
+- **Change.** v2 used to shorten the tool descriptions as well. DECISION.md section 2.1 described
+  that as part of v2. The coordinator asked that v2 differ from v1 only by the policy section, so
+  v2 now keeps the full descriptions. v1 changed only in the text that describes the four fields.
+- **Test.** `tests/test_llamacpp_agent.py` checks that v2 equals v1 with the policy block
+  removed.
+
+### D16. `RunConfig.env_params` and the flaky-transient E6 arm
+
+- **Change.** `RunConfig` has a new field, `env_params` (default `{}`), backwards compatible with
+  existing configs. For labstock, `flaky_p` is the only accepted key. It is validated by
+  `validate_env_params`. The in-process environment receives it directly. The MCP server receives
+  it as a JSON argument (`--env-params`). `schemas/run_report.schema.json` is regenerated.
+- **E6.** `configs/e6_flaky.yaml` runs Qwen2.5-1.5B with `flaky_p` = 0.2, n = 3. The stretch is
+  now runnable. It has not been run.
+- **Test.** `tests/test_env_params.py` checks that `flaky_p = 1.0` makes every call fail once and
+  the oracle recovers, and that the MCP path gives the same trajectories as the in-process path.
+
+### D17. Failure counts count unsuccessful trials only
+
+- **Change.** `TaskStats.failures` and `RunReport.failure_totals` count unsuccessful trials. The
+  runner now computes them with `metrics.aggregate_task` and the summary with
+  `metrics.summarize_tasks`. The duplicate `runner._aggregate` logic is gone. The site failure
+  chart does not show `success`. The tests that asserted the old counts were updated, and a
+  runner test compares a written report with the helpers.
+- **Effect on results.** None: no model result exists yet.
+
+### D18. Code hygiene from the review (no change to experiments)
+
+- Reports store the task glob relative to the repository, the working directory or the installed
+  package. Absolute globs are not stored. A test checks that no committed result contains a user
+  path.
+- `envinfo` moved into the package. `scripts/envinfo.py` is a thin wrapper. The installed wheel
+  carries the full environment record, and a test builds a wheel and checks it.
+- The MCP server subprocess receives only `PATH`, `PYTHONPATH`, `HOME`, `LANG` and
+  `VIRTUAL_ENV`, on top of the SDK's default set. A test checks that `OPENROUTER_API_KEY` is not
+  visible to the child.
+- The gate refuses runs with different trial counts per task. The local bootstrap fallback is
+  removed.
+- Provider errors are raised outside their `except` blocks, so no transport error or response
+  text is chained into them.
+- The `passk demo` help says it exits 0 on a FAIL verdict.
+- `scripts/render_readme.py --check` was confirmed to fail on a stale README block.
+
+### D19. Qwen3-1.7B arm added
+
+- **Decode check.** Qwen3-1.7B Q8_0 with 4 threads, a short benchmark outside the repository
+  (two timed calls after a warm-up, about 40 prompt tokens, `/no_think`). The median decode
+  speed cleared the 8 tok/s rule in `docs/prereg.md`. The number is in the report and not in the
+  repository.
+- **Change.** `LlamaCppAgent` gained `system_suffix` (default empty), appended to the system
+  message. The Qwen3 config sets it to `/no_think`. `configs/e3_qwen3_17b.yaml` is the optional
+  third arm. Its `repo_id` is `Qwen/Qwen3-1.7B-GGUF`.
+
+### D20. Qwen2.5-1.5B weights are on disk (closes D8)
+
+- The Q4_K_M file is in `~/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/`. The E3 1.5B, E5 and E6
+  configs can run. D9 (the 40 s rule) is applied after the 1.5B smoke run, as the prereg says.

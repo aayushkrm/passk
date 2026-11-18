@@ -23,8 +23,8 @@ reading of trajectories, not a measurement, and it is kept apart from the genera
 
 ## Known harness-level issues to check first
 
-- Schema errors from the flat action schema, where `tool` is not required (see
-  `docs/deviations.md`, D5). Separate these from model errors before counting categories.
+- Schema errors: check whether the tool name or an argument type is wrong, and separate that
+  from a wrong choice of tool or argument (see `docs/deviations.md`, D14).
 - Argument types, such as an integer where the environment expects a string id.
 - Episodes that reach `max_turns` after a run of identical failed calls. Check whether they
   are loops or retries.

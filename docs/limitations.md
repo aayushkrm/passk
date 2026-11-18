@@ -45,11 +45,12 @@ section. Read it before drawing a conclusion from any number.
 
 ## Model and grammar
 
-- **Structured output is a constraint, not a guarantee.** The JSON schema is flat and
-  `tool` is not required. The model can therefore emit an action without a tool name. That is
-  counted as a schema error. The share of schema errors is a result of the model under this
-  schema, and a stricter schema would change it. The rate observed in a short check before the
-  pre-registered runs is recorded in `docs/deviations.md`.
+- **Structured output is a constraint, not a guarantee.** The JSON schema is flat with four
+  required keys (`kind`, `tool`, `arguments`, `message`). The parser still checks the values
+  (a tool name outside the enum, a wrong type) and counts a bad value as a schema error. The
+  share of schema errors depends on the schema, so the schema is part of the result. Before
+  amendment 1 of the pre-registration, only `kind` was required, and the rate was much higher
+  (`docs/deviations.md`, D14).
 - **Quantisation.** Q4_K_M is one quantisation. Other quantisations and the fp16 model may
   behave differently.
 - **Model drift.** A hosted model (E7) can change without notice, and the free tier can be

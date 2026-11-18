@@ -77,8 +77,8 @@ produced by a run made after this commit, with the seeds below.
 
 ## E5. Prompt regression check (model)
 
-- **Config:** `configs/e5_prompt_v2.yaml`. Qwen2.5-1.5B with prompt v2 (terse, no policy
-  section), T = 0.7, 5 trials per task.
+- **Config:** `configs/e5_prompt_v2.yaml`. Qwen2.5-1.5B with prompt v2 (identical to v1
+  without the policy section), T = 0.7, 5 trials per task.
 - **Baseline:** E3 1.5B with prompt v1.
 - **Procedure:** `passk gate` on the two run directories with `configs/gate.yaml`, plus
   `passk diff` for per-task changes. The verbatim gate output is committed. The gate's verdict
@@ -86,13 +86,14 @@ produced by a run made after this commit, with the seeds below.
 - **Note:** the two arms share base seed 2026, but the prompts differ, so the trajectories
   are not paired at the step level.
 
-## E6. Recovery from transient failures (stretch, not run)
+## E6. Recovery from transient failures (stretch)
 
-- **Planned design:** 0.5B agent with `flaky_p` = 0.2. Recovery rate = the share of episodes
+- **Design:** Qwen2.5-1.5B agent (prompt v1, T = 0.7) with `env_params: {flaky_p: 0.2}`, 24
+  tasks x 3 trials, MCP stdio. Config: `configs/e6_flaky.yaml`. Each tool call fails
+  transiently with probability 0.2, seeded per episode. Recovery rate = the share of episodes
   with at least one transient failure that still succeed.
-- **Status:** not runnable yet. `flaky_p` is not settable from `RunConfig`, and the schema
-  is frozen. It needs a schema change approved by the orchestrator. If it is run later, this
-  section is updated first and the change is logged.
+- **Status:** runnable since amendment 1 below. It runs only after E3 and E5. It is a stretch:
+  if time is short it is reported as not run.
 
 ## E7. Hosted free model arm (descriptive, model)
 
@@ -115,3 +116,32 @@ produced by a run made after this commit, with the seeds below.
 Changes to n, the prompt set, the tasks, the models, the gate threshold and the seeds that
 are not listed above are deviations. Each is logged in `docs/deviations.md` with its reason and
 the run it affected.
+
+## Amendment 1 (2026-11-19, before any model run)
+
+Written and committed before any file in `results/` holds a model result. Each change is also
+in `docs/deviations.md` (D14 to D20).
+
+1. **Action schema.** The flat action schema now has four required keys: `kind`, `tool`,
+   `arguments` and `message`. `tool` is an enum of the tool names plus `"none"`, which a final
+   action uses. `arguments` is `{}` for a final action, and `message` is empty for a tool call.
+   Reason: with only `kind` required, the 0.5B model omitted the tool name in many outputs, so
+   the schema-error rate reflected the schema more than the model. Measured on 20 first-action
+   calls with the 0.5B model: 11 schema errors under the old schema and prompt, 0 under the new
+   one (`docs/deviations.md`, D14).
+2. **Prompt v2.** v2 is now identical to v1 except for the policy section. Earlier, v2 also
+   shortened the tool descriptions, which DECISION.md section 2.1 described as part of v2. That
+   description is dropped here so that v2 differs from v1 only by the policy section, as the
+   coordinator asked. Logged as D15.
+3. **Environment parameters.** `RunConfig` gained `env_params` (default `{}`). For labstock the
+   only accepted key is `flaky_p`, and it reaches both the in-process environment and the MCP
+   server. This makes E6 runnable (see E6). Logged as D16.
+4. **Failure counts.** `failures` and `failure_totals` count unsuccessful trials only. The
+   runner now computes them with the same functions the unit tests check. No experiment result
+   depends on the old counts, since none exists. Logged as D17.
+5. **Qwen3-1.7B arm.** `configs/e3_qwen3_17b.yaml` is added as the optional third arm. The
+   arm was enabled by a decode-speed check that cleared the 8 tok/s rule, made before the
+   arm's first run. `/no_think` is applied through the new `system_suffix` option, which appends
+   it to the system message. Logged as D19.
+6. **Weights.** The Qwen2.5-1.5B Q4_K_M file is on disk, so the 1.5B arms can run. The 40 s
+   timing rule is applied after the 1.5B smoke run, as written above. Logged as D20.
