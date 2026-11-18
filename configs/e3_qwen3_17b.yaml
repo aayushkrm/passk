@@ -1,0 +1,20 @@
+# E3 optional third arm, Qwen3-1.7B Q8_0, T=0.7, prompt v1 with /no_think, 24 tasks x 5 trials, MCP stdio.
+# Added after a decode-speed check cleared the 8 tok/s rule in prereg.md (4 threads).
+run_id: e3-qwen3-1.7b-q8-t0.7
+env: labstock
+tasks_glob: src/passk/tasks/labstock/*.yaml
+agent:
+  kind: llamacpp
+  params:
+    model_path: ~/models/Qwen/Qwen3-1.7B-GGUF/Qwen3-1.7B-Q8_0.gguf
+    repo_id: Qwen/Qwen3-1.7B-GGUF
+    system_suffix: /no_think
+    n_ctx: 4096
+    n_threads: 4
+    temperature: 0.7
+    prompt_variant: v1
+    max_tokens: 256
+n_trials: 5
+base_seed: 2026
+transport: mcp_stdio
+k_values: [1, 2, 3, 4, 5]
