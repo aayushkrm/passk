@@ -2,17 +2,6 @@
   "environment": "Intel(R) Core(TM) i7-4770HQ CPU @ 2.20GHz (4 physical cores), x86_64, macOS 14.8.9; CPU only. labstock environment served over MCP stdio. Results apply to this hardware.",
   "items": [
     {
-      "ci": "95% CI on the gap [0.000, 0.025]",
-      "detail": "120 episodes, 24 tasks, Qwen2.5-0.5B-Instruct. n counts episodes. Failure leader: tool_error_unrecovered 57.5% of episodes.",
-      "featured": true,
-      "id": "e3-qwen2.5-0.5b",
-      "label": "E3 Qwen2.5-0.5B-Instruct (Q4_K_M)",
-      "n": 120,
-      "source": "results/e3/e3-qwen2.5-0.5b-t0.7/report.json",
-      "synthetic": false,
-      "value": "pass@1 0.092 vs pass^5 0.083, gap 0.008"
-    },
-    {
       "ci": "95% CI on the gap [0.250, 0.517]",
       "detail": "120 episodes, 24 tasks, Qwen2.5-1.5B-Instruct. n counts episodes. Failure leader: policy_violation 15.8% of episodes.",
       "featured": true,
@@ -24,6 +13,17 @@
       "value": "pass@1 0.383 vs pass^5 0.000, gap 0.383"
     },
     {
+      "ci": "95% CI on the gap [0.000, 0.042]",
+      "detail": "120 episodes, 24 tasks, Qwen3-1.7B. n counts episodes. Failure leader: tool_error_unrecovered 56.7% of episodes.",
+      "featured": true,
+      "id": "e3-qwen3-1.7b",
+      "label": "E3 Qwen3-1.7B Q8_0 with /no_think (optional arm)",
+      "n": 120,
+      "source": "results/e3/e3-qwen3-1.7b-q8-t0.7/report.json",
+      "synthetic": false,
+      "value": "pass@1 0.350 vs pass^5 0.333, gap 0.017"
+    },
+    {
       "ci": "delta 95% CI [+0.117, +0.417] (delta +0.258)",
       "detail": "pass^3: baseline 0.138, candidate 0.396, delta +0.258 (95% CI [+0.117, +0.417], 24 tasks) | drop -0.258 is within max_drop 0.100 n counts the candidate run's episodes.",
       "featured": true,
@@ -33,6 +33,17 @@
       "source": "results/e5/e5-qwen2.5-1.5b-v2-t0.7/report.json",
       "synthetic": false,
       "value": "PASS"
+    },
+    {
+      "ci": "95% CI on the gap [0.000, 0.025]",
+      "detail": "120 episodes, 24 tasks, Qwen2.5-0.5B-Instruct. n counts episodes. Failure leader: tool_error_unrecovered 57.5% of episodes.",
+      "featured": false,
+      "id": "e3-qwen2.5-0.5b",
+      "label": "E3 Qwen2.5-0.5B-Instruct (Q4_K_M)",
+      "n": 120,
+      "source": "results/e3/e3-qwen2.5-0.5b-t0.7/report.json",
+      "synthetic": false,
+      "value": "pass@1 0.092 vs pass^5 0.083, gap 0.008"
     },
     {
       "ci": null,

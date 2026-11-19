@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -47,6 +48,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from passk import metrics  # noqa: E402
 from passk.diff import is_synthetic, load_report, load_trajectories  # noqa: E402
+from passk.envs.labstock import TRANSIENT_ERROR  # noqa: E402
 from passk.gate import gate, load_policy  # noqa: E402
 from passk.numfmt import fixed  # noqa: E402
 from passk.schema import RunReport, Trajectory  # noqa: E402
@@ -139,6 +141,68 @@ def _agent_label(report: RunReport) -> str:
             reported = ", ".join(agent.get("model_reported") or []) or "n/a"
             return f"{agent.get('model_requested')} (reported: {reported})"
     return report.config.agent.kind
+
+
+ROLES: tuple[tuple[str, str], ...] = (
+    ("e3-qwen2.5-0.5b", "E3 main run, Qwen2.5-0.5B-Instruct"),
+    ("e3-qwen2.5-1.5b", "E3 main run, Qwen2.5-1.5B-Instruct"),
+    ("e3-qwen3-1.7b", "E3 optional arm, Qwen3-1.7B (contrast with the 1.5B arm)"),
+    ("e4-", "E4 determinism control, T = 0"),
+    ("e5-", "E5 candidate, prompt v2"),
+    ("e6-", "E6 descriptive robustness run (injected transient tool failures)"),
+    ("e7b-", "E7b descriptive hosted run (3 tasks)"),
+    ("e7-", "E7 hosted run"),
+)
+BASELINE_PREFIX = "e3-qwen2.5-1.5b"
+E6_PREFIX = "e6-"
+QWEN3_PREFIX = "e3-qwen3-1.7b"
+TIMING_THRESHOLD_S = 40.0
+
+
+def _role(run_id: str) -> str:
+    """Human name of a run's role in the pre-registration, from its run id."""
+    for prefix, role in ROLES:
+        if run_id.startswith(prefix):
+            return role
+    return run_id
+
+
+def _quantization(model_file: str | None) -> str:
+    """The quantization in a GGUF file name (for example Q8_0 or Q4_K_M), or 'not stated'."""
+    match = re.search(r"[Qq]\d_[A-Za-z0-9_]+", model_file or "")
+    return match.group(0).upper() if match else "not stated"
+
+
+def _recovery(trajectories: list[Trajectory] | None) -> dict[str, Any] | None:
+    """Transient-failure recovery (the pre-registered E6 measure) from the trajectories.
+
+    Returns the number of episodes with at least one transient failure, how many of those
+    succeeded, and the number of transient results recorded. None without trajectories.
+    """
+    if trajectories is None:
+        return None
+    with_transient = [
+        traj
+        for traj in trajectories
+        if any(
+            step.result is not None and step.result.error == TRANSIENT_ERROR for step in traj.steps
+        )
+    ]
+    recovered = sum(1 for traj in with_transient if traj.success)
+    low, high = wilson_interval(recovered, len(with_transient))
+    transient_results = sum(
+        1
+        for traj in trajectories
+        for step in traj.steps
+        if step.result is not None and step.result.error == TRANSIENT_ERROR
+    )
+    return {
+        "episodes_with_transient": len(with_transient),
+        "recovered": recovered,
+        "ci_low": low,
+        "ci_high": high,
+        "transient_results": transient_results,
+    }
 
 
 def _tier_rows(report: RunReport) -> list[dict[str, Any]]:
@@ -238,6 +302,22 @@ def _run_record(report: RunReport, path: Path) -> dict[str, Any]:
             "model_calls": report.tokens.get("model_calls"),
         },
         "costs": _episode_costs(report, trajectories),
+        "role": _role(report.run_id),
+        "recovery": _recovery(trajectories) if report.config.env_params else None,
+        "flaky_p": report.config.env_params.get("flaky_p"),
+        "agent_meta": {
+            key: (report.env_info.get("agent") or {}).get(key)
+            for key in (
+                "repo_id",
+                "model_file",
+                "system_suffix",
+                "n_ctx",
+                "model_requested",
+                "model_reported",
+            )
+        }
+        if isinstance(report.env_info.get("agent"), dict)
+        else {},
         "env_json": _rel(env_path) if env_path.is_file() else None,
         "report_json": _rel(path),
     }
@@ -351,7 +431,7 @@ def _calibration_block(cal: dict[str, Any]) -> list[str]:
     ]
     for level in e1["levels"]:
         lines.append(
-            f"| {fixed(level['p'], 2)} | {level['max_abs_error']:.4f} | "
+            f"| {fixed(level['p'], 2)} | {fixed(level['max_abs_error'], 4)} | "
             f"{fixed(level['max_abs_z'], 2)} |"
         )
     aa, ab = e2["aa"], e2["ab"]
@@ -375,10 +455,46 @@ def _calibration_block(cal: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _run_block(run: dict[str, Any]) -> list[str]:
-    head = f"**{run['label']}: `{run['run_id']}`**"
+def _role_caveat(run: dict[str, Any], baseline: dict[str, Any] | None = None) -> list[str]:
+    """Plain-language caveats for the roles that need one. Numbers come from the records."""
+    meta = run["agent_meta"]
+    if run["run_id"].startswith(E6_PREFIX):
+        base_text = (
+            f"the E3 1.5B baseline has {baseline['trials_per_task']} trials per task"
+            if baseline
+            else "no E3 1.5B baseline is committed"
+        )
+        return [
+            "Descriptive robustness run: each tool call fails transiently with probability "
+            f"{fixed(run['flaky_p'] or 0.0, 1)}, seeded per episode. This run has "
+            f"{run['trials_per_task']} trials per task, and {base_text}, so the two are compared "
+            "descriptively only. No significance claim is made.",
+        ]
+    if run["run_id"].startswith("e7b-"):
+        reported = ", ".join(meta.get("model_reported") or []) or "not reported"
+        return [
+            f"Descriptive only: {run['tasks']} tasks (the first of each tier), "
+            f"{run['trials_per_task']} trials each, {run['episodes']} episodes. This supports no "
+            "general claim about the model. Provider-reported model id: "
+            f"`{reported}`. Free-tier routing and model versions can change between days.",
+        ]
+    if run["run_id"].startswith(QWEN3_PREFIX):
+        quant = _quantization(meta.get("model_file"))
+        return [
+            f"Optional third arm: Qwen3-1.7B, quantization {quant}, thinking disabled "
+            f"(system suffix `{meta.get('system_suffix') or 'none'}`), context "
+            f"{meta.get('n_ctx')} tokens. Compared with the 1.5B arm, the comparison is "
+            "confounded: the model family, the quantization and the thinking mode all differ. "
+            "No cause is attributed to any one of them.",
+        ]
+    return []
+
+
+def _run_block(run: dict[str, Any], baseline: dict[str, Any] | None = None) -> list[str]:
+    tag = "SYNTHETIC: " if run["label"] == SYNTHETIC else ""
+    head = f"**{tag}{run['role']}: `{run['run_id']}`**"
     if not run["complete"]:
-        head = f"**{run['label']} PARTIAL: `{run['run_id']}`**"
+        head = f"**{tag}PARTIAL: {run['role']}: `{run['run_id']}`**"
     costs = run["costs"]
     lines = [
         head,
@@ -392,6 +508,9 @@ def _run_block(run: dict[str, Any]) -> list[str]:
             f"full result.{reset}",
             "",
         ]
+    caveat = _role_caveat(run, baseline)
+    if caveat:
+        lines += ["> " + " ".join(caveat), ""]
     lines += [
         f"Agent: {run['agent']}. Transport: {run['transport']}. "
         f"Temperature: {run['temperature']}. Prompt: {run['prompt_variant']}. "
@@ -430,6 +549,16 @@ def _run_block(run: dict[str, Any]) -> list[str]:
                 f"| {tier['tier']} | {tier['tasks']} | {tier['successes']} / {tier['episodes']} "
                 f"| {rate} [{_fmt_pct(tier['ci_low'])}, {_fmt_pct(tier['ci_high'])}] |"
             )
+    if run["recovery"]:
+        rec = run["recovery"]
+        lines += [
+            "",
+            f"Recovery (the pre-registered E6 measure): {rec['recovered']} of "
+            f"{rec['episodes_with_transient']} episodes with at least one transient failure still "
+            f"succeeded (Wilson 95% CI [{fixed(rec['ci_low'] * 100, 1)}%, "
+            f"{fixed(rec['ci_high'] * 100, 1)}%]). Transient failures recorded: "
+            f"{rec['transient_results']}.",
+        ]
     if run["identical_action_tasks"]:
         same = run["identical_action_tasks"]
         lines += [
@@ -437,12 +566,21 @@ def _run_block(run: dict[str, Any]) -> list[str]:
             f"Tasks whose trials all took the same action sequence: {same['identical']} of "
             f"{same['tasks']}.",
         ]
+    if run["run_id"].startswith(QWEN3_PREFIX) and costs["median_wall_s"] is not None:
+        below = costs["median_wall_s"] < TIMING_THRESHOLD_S
+        lines += [
+            "",
+            "Timing check (the pre-registered 40 s median rule, applied to this arm): "
+            "the median is "
+            f"{fixed(costs['median_wall_s'], 1)} s, {'below' if below else 'above'} the threshold, "
+            f"so the arm {'ran at n = 5 as configured' if below else 'would need n = 3'}.",
+        ]
     if costs["median_wall_s"] is not None:
         tokens = run["tokens"]
         lines += [
             "",
             f"Median per episode: {fixed(costs['median_wall_s'], 1)} s wall, "
-            f"{costs['median_output_tokens']:.0f} output tokens. Totals: "
+            f"{fixed(costs['median_output_tokens'], 0)} output tokens. Totals: "
             f"{tokens['input_total']} input and {tokens['output_total']} output tokens over "
             f"{tokens['model_calls']} model calls. Timing was measured on a shared laptop, not a "
             "benchmark (see docs/deviations.md, D29).",
@@ -570,7 +708,7 @@ def _e5_item(reports: list[tuple[Path, RunReport]]) -> dict[str, Any] | None:
             n=_episodes(cand),
             ci=None,
             synthetic=False,
-            featured=False,
+            featured=True,
             source=_rel(path),
         )
     try:
@@ -630,7 +768,7 @@ def _e1_item(calibration: dict[str, Any] | None) -> dict[str, Any] | None:
     return _item(
         "e1-estimator",
         "E1 estimator, max absolute error of pass^k",
-        f"max abs error {e1['max_abs_error']:.4f}",
+        f"max abs error {fixed(e1['max_abs_error'], 4)}",
         f"Over k = 1..5 and per-step error p in {{{noise}}}, {e1['n_trials']} trials per task. "
         f"Largest |z| {fixed(e1['max_abs_z'], 2)}; "
         "a value below 3.0 is consistent with the analytic "
@@ -690,24 +828,23 @@ def build_items(results: dict[str, Any]) -> list[dict[str, Any]]:
     reports: list[tuple[Path, RunReport]] = results["reports"]
     calibration = results["calibration"]
     candidates: list[dict[str, Any] | None] = []
-    for item_id, prefix, label in (
-        ("e3-qwen2.5-0.5b", "e3-qwen2.5-0.5b", "E3 Qwen2.5-0.5B-Instruct (Q4_K_M)"),
-        ("e3-qwen2.5-1.5b", "e3-qwen2.5-1.5b", "E3 Qwen2.5-1.5B-Instruct (Q4_K_M)"),
-    ):
-        found = _find(reports, prefix)
-        candidates.append(
-            _gap_item(item_id, label, found[0], found[1], featured=True) if found else None
+    found_15 = _find(reports, "e3-qwen2.5-1.5b")
+    candidates.append(
+        _gap_item(
+            "e3-qwen2.5-1.5b",
+            "E3 Qwen2.5-1.5B-Instruct (Q4_K_M)",
+            found_15[0],
+            found_15[1],
+            featured=True,
         )
-    candidates.append(_e5_item(reports))
-    e7 = _e7_item(reports)
-    candidates.append(e7)
-    candidates.append(_e1_item(calibration))
-    candidates.append(_e2_item(calibration))
+        if found_15
+        else None
+    )
     qwen3 = _find(reports, "e3-qwen3-1.7b")
     candidates.append(
         _gap_item(
             "e3-qwen3-1.7b",
-            "E3 Qwen3-1.7B Q8_0 (optional arm)",
+            "E3 Qwen3-1.7B Q8_0 with /no_think (optional arm)",
             qwen3[0],
             qwen3[1],
             featured=True,
@@ -715,6 +852,23 @@ def build_items(results: dict[str, Any]) -> list[dict[str, Any]]:
         if qwen3
         else None
     )
+    candidates.append(_e5_item(reports))
+    found_05 = _find(reports, "e3-qwen2.5-0.5b")
+    candidates.append(
+        _gap_item(
+            "e3-qwen2.5-0.5b",
+            "E3 Qwen2.5-0.5B-Instruct (Q4_K_M)",
+            found_05[0],
+            found_05[1],
+            featured=False,
+        )
+        if found_05
+        else None
+    )
+    candidates.append(_e1_item(calibration))
+    candidates.append(_e2_item(calibration))
+    candidates.append(_e7_item(reports))
+    # E6 and E7b are reported in the README and the site; the item cap is full.
     return [item for item in candidates if item is not None][:MAX_ITEMS]
 
 
@@ -753,12 +907,71 @@ def _headline_list(items: list[dict[str, Any]]) -> list[str]:
     return lines + [""]
 
 
+def _episode_totals(run: dict[str, Any]) -> tuple[int, int]:
+    """Successes and episodes summed over the tiers of a run record."""
+    return (
+        sum(tier["successes"] for tier in run["tiers"]),
+        sum(tier["episodes"] for tier in run["tiers"]),
+    )
+
+
+def _comparison_lines(runs: list[dict[str, Any]]) -> list[str]:
+    """Descriptive side-by-side tables against the E3 1.5B baseline. No significance tests."""
+    baseline = next((r for r in runs if r["run_id"].startswith(BASELINE_PREFIX)), None)
+    if baseline is None:
+        return []
+    lines: list[str] = []
+    e6 = next((r for r in runs if r["run_id"].startswith(E6_PREFIX)), None)
+    if e6 is not None:
+        lines += [
+            "**Descriptive comparison: E6 against the E3 1.5B baseline.** Not a significance "
+            "test: the trial counts differ, and the two runs are not paired.",
+            "",
+            "| run | trials per task | successes / episodes | pass@1 (95% CI) | pass^3 (95% CI) |",
+            "|---|---|---|---|---|",
+        ]
+        for run in (baseline, e6):
+            successes, episodes = _episode_totals(run)
+            lines.append(
+                f"| `{run['run_id']}` | {run['trials_per_task']} | {successes} / {episodes} | "
+                f"{_interval(run['pass_at_k'].get('1'))} | "
+                f"{_interval(run['pass_hat_k'].get('3'))} |"
+            )
+        lines.append("")
+    qwen3 = next((r for r in runs if r["run_id"].startswith(QWEN3_PREFIX)), None)
+    if qwen3 is not None:
+        lines += [
+            "**Descriptive contrast: the Qwen3-1.7B arm against the E3 1.5B baseline.** The "
+            "comparison is confounded: the model family, the quantization and the thinking mode "
+            "all differ between the rows. No cause is attributed.",
+            "",
+            "| run | model | quantization | thinking | pass@1 (95% CI) | pass^5 (95% CI) |",
+            "|---|---|---|---|---|---|",
+        ]
+        rows = (
+            (baseline, "not applicable (no thinking mode)"),
+            (qwen3, "disabled (`/no_think`)"),
+        )
+        for run, thinking in rows:
+            meta = run["agent_meta"]
+            lines.append(
+                f"| `{run['run_id']}` | {meta.get('repo_id') or 'not stated'} | "
+                f"{_quantization(meta.get('model_file'))} | {thinking} | "
+                f"{_interval(run['pass_at_k'].get('1'))} | "
+                f"{_interval(run['pass_hat_k'].get('5'))} |"
+            )
+        lines.append("")
+    return lines
+
+
 def _block(results: dict[str, Any], contract: dict[str, Any]) -> str:
     lines: list[str] = _headline_list(contract["items"])
     if results["calibration"]:
         lines += _calibration_block(results["calibration"]) + [""]
+    baseline = next((r for r in results["runs"] if r["run_id"].startswith(BASELINE_PREFIX)), None)
     for run in results["runs"]:
-        lines += _run_block(run) + [""]
+        lines += _run_block(run, baseline) + [""]
+    lines += _comparison_lines(results["runs"])
     for gate_file in results["gates"]:
         lines += [
             f"{gate_file['label']} Gate output, [`{gate_file['file']}`]({gate_file['file']}):",

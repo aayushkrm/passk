@@ -154,19 +154,42 @@ def test_items_are_capped_and_follow_the_priority_order() -> None:
         _report("report_baseline.json", "e5-qwen2.5-1.5b-v2-t0.7"),
         _report("report_minor_drop.json", "e7-nemotron-t0.7", complete=False),
         _report("report_baseline.json", "e3-qwen3-1.7b-q8-t0.7", repo="Qwen/Qwen3-1.7B-GGUF"),
+        _report(
+            "report_baseline.json",
+            "e6-qwen2.5-1.5b-flaky0.2",
+            repo="Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+        ),
     ]
     results = _results(reports, CALIBRATION)
     items = RR.build_headline(results)["items"]
     assert len(items) == 6
     assert [item["id"] for item in items] == [
-        "e3-qwen2.5-0.5b",
         "e3-qwen2.5-1.5b",
+        "e3-qwen3-1.7b",
         "e5-regression",
-        "e7-hosted",
+        "e3-qwen2.5-0.5b",
         "e1-estimator",
         "e2-gate",
     ]
-    assert "e3-qwen3-1.7b" not in [item["id"] for item in items]  # optional arm, lowest priority
+    # E6 and E7 are reported in the README and the site when the item cap is full.
+    assert "e6-flaky" not in [item["id"] for item in items]
+
+
+def test_exactly_three_items_are_featured() -> None:
+    reports = [
+        _report(
+            "report_baseline.json", "e3-qwen2.5-0.5b-t0.7", repo="Qwen/Qwen2.5-0.5B-Instruct-GGUF"
+        ),
+        _report(
+            "report_baseline.json", "e3-qwen2.5-1.5b-t0.7", repo="Qwen/Qwen2.5-1.5B-Instruct-GGUF"
+        ),
+        _report("report_baseline.json", "e5-qwen2.5-1.5b-v2-t0.7"),
+        _report("report_baseline.json", "e3-qwen3-1.7b-q8-t0.7", repo="Qwen/Qwen3-1.7B-GGUF"),
+    ]
+    featured = [
+        i["id"] for i in RR.build_headline(_results(reports, CALIBRATION))["items"] if i["featured"]
+    ]
+    assert featured == ["e3-qwen2.5-1.5b", "e3-qwen3-1.7b", "e5-regression"]
 
 
 def test_items_are_omitted_when_their_source_is_missing() -> None:
@@ -191,7 +214,7 @@ def test_e3_item_is_featured_gap_with_a_ci_and_no_invented_n() -> None:
     )
     item = RR.build_headline(_results([report], None))["items"][0]
     assert item["id"] == "e3-qwen2.5-0.5b"
-    assert item["featured"] is True and item["synthetic"] is False
+    assert item["featured"] is False and item["synthetic"] is False  # the 0.5B arm is not featured
     assert re.fullmatch(r"pass@1 \d\.\d{3} vs pass\^5 \d\.\d{3}, gap -?\d\.\d{3}", item["value"])
     assert re.fullmatch(r"95% CI on the gap \[-?\d\.\d{3}, -?\d\.\d{3}\]", item["ci"])
     assert item["n"] == sum(t.n for t in report.tasks)
