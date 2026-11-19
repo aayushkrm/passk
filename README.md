@@ -287,7 +287,7 @@ passk run -c configs/e3_qwen05.yaml --out results/e3 # main run, long
 
 ## How this was built
 
-This repository was built with AI coding assistants (Claude Code). The author, Ayush Kumar, drafted the design and experiment specifications with them and reviews every design choice and every reported number before publication.
+This repository was designed, coded, tested and documented by AI coding assistants (Claude, run through Claude Code) working autonomously under Ayush Kumar's direction. That includes the pre-registrations, the experiments and this write-up. A separate AI reviewer checked the code and the results (the findings and what was changed are in the commit history and `docs/deviations.md`). A line-by-line human review by the author has not been done yet, so none of this should be read as a human-audited result. Every measured number in this README is generated from the committed result files.
 
 ## Citation
 
