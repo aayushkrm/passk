@@ -4,7 +4,7 @@ pass^k for tool-using agents: an offline harness that measures whether an agent 
 
 > **Status.** The harness, the 24-task LabStock environment, the MCP server, the calibration (E1 and E2), the demo, and the E3, E4 and E5 model runs are built, run and committed. The E5 gate verdict is a pass in the pre-registered direction (see Findings). E6 (stretch), E7 (the hosted arm, stopped by the free-tier daily quota) and the Qwen3-1.7B arm have **not been run**. Everything under "Results" is rendered from committed JSON in `results/` by `make report`.
 
-## Quickstart (about 60 seconds)
+## Quickstart
 
 ```bash
 uv tool install git+https://github.com/aayushkrm/passk
