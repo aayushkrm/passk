@@ -19,6 +19,7 @@ from typing import Any, Literal
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from passk.diff import is_synthetic, load_report, load_trajectories, mean_metric
+from passk.numfmt import fixed
 from passk.schema import FailureCategory, RunReport, Trajectory
 from passk.site.charts import (
     Curve,
@@ -151,7 +152,7 @@ def _trajectory_view(traj: Trajectory) -> dict[str, Any]:
                 "content": _short(result.content) if result else None,
                 "error": (result.error or None) if result else None,
                 "message": action.message,
-                "latency": f"{step.latency_s:.3f} s",
+                "latency": f"{fixed(step.latency_s, 3)} s",
             }
         )
     return {
@@ -205,7 +206,7 @@ def _run_context(report: RunReport, trajectories: list[Trajectory] | None) -> di
         "transport": report.config.transport,
         "n_tasks": len(report.tasks),
         "n_trials": report.config.n_trials,
-        "wall_s": f"{report.wall_s:.1f}",
+        "wall_s": f"{fixed(report.wall_s, 1)}",
         "k_values": k_values,
         "summary_rows": rows,
         "task_rows": task_rows,
@@ -270,7 +271,7 @@ def _markdown(report: RunReport) -> str:
         f"- Transport: `{report.config.transport}`",
         f"- Tasks: {len(report.tasks)}",
         f"- Trials per task: {report.config.n_trials}",
-        f"- Wall time: {report.wall_s:.1f} s",
+        f"- Wall time: {fixed(report.wall_s, 1)} s",
         "",
         "## Summary",
         "",
@@ -279,19 +280,19 @@ def _markdown(report: RunReport) -> str:
     ]
     for row in rows:
         ci = (
-            f"[{row['ci_low']:.3f}, {row['ci_high']:.3f}]"
+            f"[{fixed(row['ci_low'], 3)}, {fixed(row['ci_high'], 3)}]"
             if row["ci_low"] is not None and row["ci_high"] is not None
             else "n/a"
         )
-        at = f"{row['pass_at_k']:.3f}" if row["pass_at_k"] is not None else "n/a"
-        lines.append(f"| {row['k']} | {row['pass_hat_k']:.3f} | {ci} | {at} |")
+        at = f"{fixed(row['pass_at_k'], 3)}" if row["pass_at_k"] is not None else "n/a"
+        lines.append(f"| {row['k']} | {fixed(row['pass_hat_k'], 3)} | {ci} | {at} |")
     lines += ["", "## Failures", "", "| category | trials |", "|---|---|"]
     lines += [f"| {name} | {count} |" for name, count in _failure_items(report)]
     k_values = sorted(set(report.config.k_values))
     header = "| task | tier | successes | " + " | ".join(f"pass^{k}" for k in k_values) + " |"
     lines += ["", "## Tasks", "", header, "|" + "---|" * (3 + len(k_values))]
     for task in report.tasks:
-        cells = [f"{task.pass_hat_k.get(k, float('nan')):.3f}" for k in k_values]
+        cells = [f"{fixed(task.pass_hat_k.get(k, float('nan')), 3)}" for k in k_values]
         lines.append(
             f"| {task.task_id} | {task.tier} | {task.c}/{task.n} | " + " | ".join(cells) + " |"
         )
@@ -402,7 +403,7 @@ def _llms_text(entries: list[_Entry]) -> str:
         label = " (SYNTHETIC)" if is_synthetic(report.env_info) else ""
         if not report.complete:
             label += " (PARTIAL)"
-        pieces = [f"pass^{r['k']} {r['pass_hat_k']:.3f}" for r in _pass_rows(report)]
+        pieces = [f"pass^{r['k']} {fixed(r['pass_hat_k'], 3)}" for r in _pass_rows(report)]
         lines.append(f"- {report.run_id}{label}: " + ", ".join(pieces))
         lines.append(f"  - page: runs/{entry.slug}/index.html")
         lines.append(f"  - data: runs/{entry.slug}/report.json")

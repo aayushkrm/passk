@@ -19,11 +19,17 @@ import yaml
 from pydantic import ValidationError
 
 from passk import metrics
+from passk.numfmt import fixed
 from passk.schema import GateDecision, GatePolicy, RunReport, TaskStats
 
 BOOTSTRAP_RESAMPLES = 10_000
 BOOTSTRAP_SEED = 0
 POLICY_KEYS = frozenset({"k", "max_drop", "min_pass_hat_k", "require_significance", "alpha"})
+
+
+def f3(value: float, *, signed: bool = False) -> str:
+    """Format a value with three decimals, stable across platforms."""
+    return fixed(value, 3, signed=signed)
 
 
 def load_policy(path: Path) -> GatePolicy:
@@ -123,8 +129,9 @@ def gate(baseline: RunReport, candidate: RunReport, policy: GatePolicy) -> GateD
     level = f"{(1.0 - policy.alpha) * 100:g}%"
     drop = 0.0 - delta  # written this way so a zero delta never prints as -0.000
     reasons = [
-        f"pass^{k}: baseline {mean_a:.3f}, candidate {mean_b:.3f}, delta {delta:+.3f} "
-        f"({level} CI [{ci_low:+.3f}, {ci_high:+.3f}], {len(ids)} tasks)"
+        f"pass^{k}: baseline {f3(mean_a)}, candidate {f3(mean_b)}, "
+        f"delta {f3(delta, signed=True)} "
+        f"({level} CI [{f3(ci_low, signed=True)}, {f3(ci_high, signed=True)}], {len(ids)} tasks)"
     ]
     failed = False
     if drop > policy.max_drop:
@@ -132,33 +139,33 @@ def gate(baseline: RunReport, candidate: RunReport, policy: GatePolicy) -> GateD
         if not policy.require_significance:
             failed = True
             reasons.append(
-                f"regression: drop {drop:.3f} exceeds max_drop {policy.max_drop:.3f} "
+                f"regression: drop {f3(drop)} exceeds max_drop {f3(policy.max_drop)} "
                 "(significance not required)"
             )
         elif significant:
             failed = True
             reasons.append(
-                f"regression: drop {drop:.3f} exceeds max_drop {policy.max_drop:.3f} "
+                f"regression: drop {f3(drop)} exceeds max_drop {f3(policy.max_drop)} "
                 f"and the {level} CI excludes 0"
             )
         else:
             reasons.append(
-                f"not a regression: drop {drop:.3f} exceeds max_drop {policy.max_drop:.3f} "
-                f"but the {level} CI includes 0"
+                f"not a regression: drop {f3(drop)} exceeds max_drop "
+                f"{f3(policy.max_drop)} but the {level} CI includes 0"
             )
     else:
-        reasons.append(f"drop {drop:.3f} is within max_drop {policy.max_drop:.3f}")
+        reasons.append(f"drop {f3(drop)} is within max_drop {f3(policy.max_drop)}")
 
     if policy.min_pass_hat_k is not None:
         floor = policy.min_pass_hat_k
         if mean_b < floor:
             failed = True
             reasons.append(
-                f"floor: candidate pass^{k} {mean_b:.3f} is below min_pass_hat_k {floor:.3f}"
+                f"floor: candidate pass^{k} {f3(mean_b)} is below min_pass_hat_k {f3(floor)}"
             )
         else:
             reasons.append(
-                f"floor: candidate pass^{k} {mean_b:.3f} meets min_pass_hat_k {floor:.3f}"
+                f"floor: candidate pass^{k} {f3(mean_b)} meets min_pass_hat_k {f3(floor)}"
             )
 
     return GateDecision(

@@ -343,3 +343,13 @@ All of these are recorded in `docs/prereg.md`, Amendment 1.
   unchanged.
 - E7 (the hosted arm) was not completed because the free-tier daily quota ran out (D21, D22). No E7
   results are committed.
+
+## D32. Platform-stable number formatting
+
+Found after publication, when CI on Python 3.12 printed `baseline 0.137` for a value that prints
+`0.138` on the author's machine. The E5 baseline pass^3 is exactly 0.1375, a rounding tie, and
+Python 3.12 sums floats more accurately, so `f"{x:.3f}"` landed on either side of the tie. Text
+formatting in the gate reasons, the CLI, the site and the README renderer now goes through
+`passk.numfmt.fixed`, which rounds ties half away from zero. No measured value changed. The two
+stored gate outputs, `results/headline.json` and the README block were regenerated; the E5
+baseline reads 0.138 (was 0.137) and one pass^2 table cell reads 0.538 (was 0.537).

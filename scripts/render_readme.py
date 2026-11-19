@@ -48,6 +48,7 @@ sys.path.insert(0, str(REPO / "src"))
 from passk import metrics  # noqa: E402
 from passk.diff import is_synthetic, load_report, load_trajectories  # noqa: E402
 from passk.gate import gate, load_policy  # noqa: E402
+from passk.numfmt import fixed  # noqa: E402
 from passk.schema import RunReport, Trajectory  # noqa: E402
 from passk.validate import wilson_interval  # noqa: E402
 
@@ -79,7 +80,7 @@ def _rel(path: Path) -> str:
 def _interval(item: dict[str, Any] | None) -> str:
     if not item:
         return "n/a"
-    return f"{item['mean']:.3f} [{item['ci_low']:.3f}, {item['ci_high']:.3f}]"
+    return f"{fixed(item['mean'], 3)} [{fixed(item['ci_low'], 3)}, {fixed(item['ci_high'], 3)}]"
 
 
 def _k_values(report: RunReport) -> list[int]:
@@ -333,7 +334,7 @@ def collect_results() -> dict[str, Any]:
 
 
 def _fmt_pct(value: float) -> str:
-    return f"{value * 100:.1f}%"
+    return f"{fixed(value * 100, 1)}%"
 
 
 def _calibration_block(cal: dict[str, Any]) -> list[str]:
@@ -350,7 +351,8 @@ def _calibration_block(cal: dict[str, Any]) -> list[str]:
     ]
     for level in e1["levels"]:
         lines.append(
-            f"| {level['p']:.2f} | {level['max_abs_error']:.4f} | {level['max_abs_z']:.2f} |"
+            f"| {fixed(level['p'], 2)} | {level['max_abs_error']:.4f} | "
+            f"{fixed(level['max_abs_z'], 2)} |"
         )
     aa, ab = e2["aa"], e2["ab"]
     lines += [
@@ -412,7 +414,8 @@ def _run_block(run: dict[str, Any]) -> list[str]:
         lines += [
             "",
             "Gap pass@1 - pass^5: "
-            f"{gap['mean']:.3f} (95% CI [{gap['ci_low']:.3f}, {gap['ci_high']:.3f}]), "
+            f"{fixed(gap['mean'], 3)} (95% CI [{fixed(gap['ci_low'], 3)}, "
+            f"{fixed(gap['ci_high'], 3)}]), "
             "over tasks.",
         ]
     if run["tiers"]:
@@ -438,7 +441,7 @@ def _run_block(run: dict[str, Any]) -> list[str]:
         tokens = run["tokens"]
         lines += [
             "",
-            f"Median per episode: {costs['median_wall_s']:.1f} s wall, "
+            f"Median per episode: {fixed(costs['median_wall_s'], 1)} s wall, "
             f"{costs['median_output_tokens']:.0f} output tokens. Totals: "
             f"{tokens['input_total']} input and {tokens['output_total']} output tokens over "
             f"{tokens['model_calls']} model calls. Timing was measured on a shared laptop, not a "
@@ -535,10 +538,10 @@ def _gap_item(
     return _item(
         item_id,
         label,
-        f"{prefix}pass@1 {p1:.3f} vs pass^5 {p5:.3f}, gap {mean:.3f}",
+        f"{prefix}pass@1 {fixed(p1, 3)} vs pass^5 {fixed(p5, 3)}, gap {fixed(mean, 3)}",
         detail,
         n=_episodes(report),
-        ci=f"95% CI on the gap [{low:.3f}, {high:.3f}]",
+        ci=f"95% CI on the gap [{fixed(low, 3)}, {fixed(high, 3)}]",
         synthetic=is_synthetic(report.env_info),
         featured=featured,
         source=_rel(path),
@@ -581,8 +584,9 @@ def _e5_item(reports: list[tuple[Path, RunReport]]) -> dict[str, Any] | None:
         " | ".join(decision.reasons) + " n counts the candidate run's episodes.",
         n=_episodes(cand),
         ci=(
-            f"delta 95% CI [{decision.ci_low:+.3f}, {decision.ci_high:+.3f}] "
-            f"(delta {decision.delta:+.3f})"
+            f"delta 95% CI [{fixed(decision.ci_low, 3, signed=True)}, "
+            f"{fixed(decision.ci_high, 3, signed=True)}] "
+            f"(delta {fixed(decision.delta, 3, signed=True)})"
         ),
         synthetic=False,
         featured=True,
@@ -622,13 +626,14 @@ def _e1_item(calibration: dict[str, Any] | None) -> dict[str, Any] | None:
     if calibration is None:
         return None
     e1 = calibration["e1"]
-    noise = ", ".join(f"{level['p']:.2f}" for level in e1["levels"])
+    noise = ", ".join(f"{fixed(level['p'], 2)}" for level in e1["levels"])
     return _item(
         "e1-estimator",
         "E1 estimator, max absolute error of pass^k",
         f"max abs error {e1['max_abs_error']:.4f}",
         f"Over k = 1..5 and per-step error p in {{{noise}}}, {e1['n_trials']} trials per task. "
-        f"Largest |z| {e1['max_abs_z']:.2f}; a value below 3.0 is consistent with the analytic "
+        f"Largest |z| {fixed(e1['max_abs_z'], 2)}; "
+        "a value below 3.0 is consistent with the analytic "
         "pass^k. Calibrates the tool, not a model. No n is given: the value is a maximum over "
         "cells, not a sample size.",
         n=None,

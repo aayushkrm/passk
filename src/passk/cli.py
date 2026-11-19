@@ -21,6 +21,7 @@ import passk
 from passk import runner, validate
 from passk.diff import diff, load_report, load_trajectories, mean_metric
 from passk.gate import gate, load_policy
+from passk.numfmt import fixed
 from passk.schema import AgentConfig, GatePolicy, RunConfig, RunReport, Trajectory
 from passk.site.build import render_report
 
@@ -184,7 +185,7 @@ def run_cmd(
             f"-> {Path(out) / report.run_id}"
         )
         for k, value in _pass_summary(report).items():
-            typer.echo(f"  pass^{k} {value:.3f}")
+            typer.echo(f"  pass^{k} {fixed(value, 3)}")
         return 0
 
     _guard(json_output, body)
@@ -265,9 +266,9 @@ def diff_cmd(
         rows = [
             [
                 str(k_value),
-                f"{vals['baseline']:.3f}",
-                f"{vals['candidate']:.3f}",
-                f"{vals['delta']:+.3f}",
+                f"{fixed(vals['baseline'], 3)}",
+                f"{fixed(vals['candidate'], 3)}",
+                f"{fixed(vals['delta'], 3, signed=True)}",
             ]
             for k_value, vals in result["pass_hat_k"].items()
         ]
@@ -277,9 +278,9 @@ def diff_cmd(
             [
                 row["task_id"],
                 str(row["tier"]),
-                f"{row['pass_hat_k_baseline']:.3f}",
-                f"{row['pass_hat_k_candidate']:.3f}",
-                f"{row['delta']:+.3f}",
+                f"{fixed(row['pass_hat_k_baseline'], 3)}",
+                f"{fixed(row['pass_hat_k_candidate'], 3)}",
+                f"{fixed(row['delta'], 3, signed=True)}",
             ]
             for row in result["tasks"]
         ]
@@ -439,9 +440,9 @@ def validate_cmd(
         typer.echo(f"{DEMO_LABEL}: {result['note']}")
         e1_rows = [
             [
-                f"{level['p']:.2f}",
+                f"{fixed(level['p'], 2)}",
                 f"{level['max_abs_error']:.4f}",
-                f"{level['max_abs_z']:.2f}",
+                f"{fixed(level['max_abs_z'], 2)}",
             ]
             for level in result["e1"]["levels"]
         ]
@@ -451,14 +452,14 @@ def validate_cmd(
         typer.echo("")
         typer.echo(f"E2 gate: policy k={e2['policy']['k']}, max_drop={e2['policy']['max_drop']}")
         typer.echo(
-            f"  false alarm rate  {e2['aa']['rate']:.3f} "
+            f"  false alarm rate  {fixed(e2['aa']['rate'], 3)} "
             f"({e2['aa']['false_alarms']}/{e2['pairs']}, "
-            f"95% CI {e2['aa']['ci95'][0]:.3f} to {e2['aa']['ci95'][1]:.3f})"
+            f"95% CI {fixed(e2['aa']['ci95'][0], 3)} to {fixed(e2['aa']['ci95'][1], 3)})"
         )
         typer.echo(
-            f"  power at p 0.05 vs 0.15  {e2['ab']['power']:.3f} "
+            f"  power at p 0.05 vs 0.15  {fixed(e2['ab']['power'], 3)} "
             f"({e2['ab']['detections']}/{e2['pairs']}, "
-            f"95% CI {e2['ab']['ci95'][0]:.3f} to {e2['ab']['ci95'][1]:.3f})"
+            f"95% CI {fixed(e2['ab']['ci95'][0], 3)} to {fixed(e2['ab']['ci95'][1], 3)})"
         )
         return 0
 
@@ -560,7 +561,7 @@ def demo_cmd(
             summary = _pass_summary(report)
             rows.append(
                 [report.run_id]
-                + [f"{summary[k]:.3f}" if k in summary else "n/a" for k in range(1, 6)]
+                + [f"{fixed(summary[k], 3)}" if k in summary else "n/a" for k in range(1, 6)]
             )
         typer.echo(_table(headers, rows))
         typer.echo("")
