@@ -26,7 +26,7 @@ accepts `--json`.
 | `passk gate A B --policy gate.yaml` | Exit 0 if the candidate passes, 1 if it regresses. |
 | `passk serve-tools labstock` | Serves the labstock tools over MCP v2 stdio. Stdout is the protocol stream. |
 | `passk validate [--k 3] [--max-drop 0.10] [--pairs 200]` | Calibration of the estimator (E1) and the gate (E2) on scripted agents. Output is SYNTHETIC. |
-| `passk demo` | Scripted-agent demo, under 30 s, no model. Output is SYNTHETIC. |
+| `passk demo` | Scripted-agent demo, under 30 s, no model. Output is SYNTHETIC. The gate verdict it prints is FAIL by design, and the exit code is 0 whatever the verdict. Do not use the demo's exit code as a gate result; use `passk gate` on two run directories for that. |
 
 `A` and `B` are run directories (or a `report.json` path). `diff` and `report` also read
 `trajectories.jsonl` when it is present. With it, the failure shift is a paired

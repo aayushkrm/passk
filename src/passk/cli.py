@@ -501,8 +501,13 @@ def demo_cmd(
 ) -> None:
     """Run a SYNTHETIC scripted demo in under 30 s with no model and no downloads.
 
-    Exits 0 even when the gate prints FAIL, which is the expected result for a noisy agent.
-    Use `passk gate` for a CI exit code.
+    The demo compares an oracle agent with a noisy one and prints the gate verdict.
+
+    The verdict is expected to be FAIL: that is the point of the demo.
+
+    The exit code is 0 whatever the verdict. It is not a check of the gate.
+
+    For a CI exit code, run `passk gate` on two run directories: 0 on pass, 1 on regression.
     """
 
     def body() -> int:
@@ -563,6 +568,10 @@ def demo_cmd(
         typer.echo(f"gate (baseline demo-oracle, candidate demo-noisy-p10): {verdict}")
         for reason in decision.reasons:
             typer.echo(f"  - {reason}")
+        typer.echo(
+            "exit code is 0 by design, whatever the verdict. For a CI exit code use "
+            "`passk gate` on two run directories."
+        )
         return 0
 
     _guard(json_output, body)

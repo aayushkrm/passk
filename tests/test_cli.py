@@ -250,3 +250,26 @@ def test_serve_tools_calls_the_labstock_server(monkeypatch: pytest.MonkeyPatch) 
     result = runner_cli.invoke(app, ["serve-tools"])
     assert result.exit_code == 0, result.output
     assert calls == ["labstock"]
+
+
+def test_demo_help_says_the_exit_code_is_zero_by_design_and_points_to_gate() -> None:
+    from typer.testing import CliRunner
+
+    from passk.cli import app
+
+    result = CliRunner().invoke(app, ["demo", "--help"])
+    assert result.exit_code == 0
+    text = " ".join(result.output.split())
+    assert "exit code is 0 whatever the verdict" in text
+    assert "passk gate" in text
+
+
+def test_demo_exits_zero_and_prints_the_exit_code_note() -> None:
+    from typer.testing import CliRunner
+
+    from passk.cli import app
+
+    result = CliRunner().invoke(app, ["demo"])
+    assert result.exit_code == 0
+    assert "gate (baseline demo-oracle" in result.output
+    assert "exit code is 0 by design" in result.output
