@@ -26,7 +26,7 @@
     {
       "ci": "delta 95% CI [+0.117, +0.417] (delta +0.258)",
       "detail": "pass^3: baseline 0.137, candidate 0.396, delta +0.258 (95% CI [+0.117, +0.417], 24 tasks) | drop -0.258 is within max_drop 0.100",
-      "featured": false,
+      "featured": true,
       "id": "e5-regression",
       "label": "E5 prompt v2 vs v1 (1.5B), regression gate",
       "n": 120,

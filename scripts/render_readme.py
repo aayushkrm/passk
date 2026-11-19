@@ -585,7 +585,7 @@ def _e5_item(reports: list[tuple[Path, RunReport]]) -> dict[str, Any] | None:
             f"(delta {decision.delta:+.3f})"
         ),
         synthetic=False,
-        featured=False,
+        featured=True,
         source=_rel(path),
     )
 
