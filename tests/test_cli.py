@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,14 @@ from passk.cli import app
 runner_cli = CliRunner()
 FIXTURES = Path(__file__).parent / "fixtures"
 COMMANDS = ["run", "report", "diff", "gate", "serve-tools", "validate", "demo"]
+
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    """Strip ANSI styling: on CI the help text is colourised and splits option names."""
+    return _ANSI.sub("", text)
 
 
 def _run_dir(tmp_path: Path, name: str, fixture: str) -> str:
@@ -45,7 +54,7 @@ def test_command_help_works(command: str) -> None:
 @pytest.mark.parametrize("command", COMMANDS)
 def test_every_command_accepts_json_flag(command: str) -> None:
     result = runner_cli.invoke(app, [command, "--help"])
-    assert "--json" in result.output
+    assert "--json" in _plain(result.output)
 
 
 # gate exit codes -------------------------------------------------------------------------
