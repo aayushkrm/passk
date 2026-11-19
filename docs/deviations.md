@@ -303,3 +303,38 @@ All of these are recorded in `docs/prereg.md`, Amendment 1.
 - See D24 for the change and the tests. Strict mode is not used by any pre-registered run. Failure
   counts such as `schema_error` under strict mode would be higher than under the lenient default
   and cannot be compared with the committed E3 runs without a new run.
+
+## Results rendered, E5 reversed gate, timing, unrun arms
+
+### D29. Timing measured on a shared laptop; wall times are not comparable across runs
+
+- The per-episode wall times and token totals in the results block are measured on a laptop that
+  ran other jobs. The E3 0.5B run overlapped with benchlint E2 and E3 jobs for part of its run
+  (reported by the orchestrator). Its wall times are therefore not comparable with the 1.5B run,
+  and no run's wall times are a benchmark. The block states this next to each timing line.
+- The power state was not recorded per run (D26). The orchestrator's pmset check at queue start
+  recorded AC power. Whether the E4 and E5 runs overlapped with other jobs is not recorded.
+
+### D30. Reversed E5 gate: a post-hoc demonstration, not pre-registered
+
+- `results/gates/e5_reversed_v2_baseline_v1_candidate.txt` is the gate applied to the same two E5
+  runs with the roles swapped, so the v2 run is the baseline. It reports FAIL, because the drop
+  exceeds the policy's limit. The pre-registered comparison is `results/gates/e5_v1_vs_v2.txt`,
+  which reports PASS.
+- The reversed run was made after the pre-registered comparison, to show the gate firing on a drop.
+  It is not in the pre-registration and is not a second E5 result. The renderer labels it "POST-HOC
+  demonstration, NOT pre-registered" wherever it appears, and the README says the same. The gate
+  was not changed.
+- The E5 verdict is reported as measured. The result (the candidate's pass^3 is above the baseline's)
+  is surprising, and its cause was not tested (see the README Findings section).
+
+### D31. E6 and the Qwen3-1.7B arm were not run
+
+- E6 (the transient-failure stretch) was not run. It is a stretch goal, and the orchestrator did
+  not run it. Its config exists (`configs/e6_flaky.yaml`), and D16 made `flaky_p` settable from
+  `RunConfig`, so it is runnable later.
+- The Qwen3-1.7B arm was not run. The decode-speed check in D19 cleared the 8 tok/s rule. The
+  repository records no reason for not running the arm. Its config (`configs/e3_qwen3_17b.yaml`) is
+  unchanged.
+- E7 (the hosted arm) was not completed because the free-tier daily quota ran out (D21, D22). No E7
+  results are committed.
