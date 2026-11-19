@@ -1,0 +1,3 @@
+FAIL
+  - pass^3: baseline 0.396, candidate 0.137, delta -0.258 (95% CI [-0.417, -0.117], 24 tasks)
+  - regression: drop 0.258 exceeds max_drop 0.100 and the 95% CI excludes 0
