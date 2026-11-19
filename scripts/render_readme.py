@@ -49,6 +49,7 @@ from passk import metrics  # noqa: E402
 from passk.diff import is_synthetic, load_report, load_trajectories  # noqa: E402
 from passk.gate import gate, load_policy  # noqa: E402
 from passk.schema import RunReport, Trajectory  # noqa: E402
+from passk.validate import wilson_interval  # noqa: E402
 
 CONFIGS = REPO / "configs"
 GATE_POLICY = CONFIGS / "gate.yaml"
@@ -91,10 +92,11 @@ def _summary_at(report: RunReport, metric: str, k: int) -> dict[str, float] | No
 
 
 def _failure_shares(report: RunReport) -> dict[str, float]:
-    total = sum(report.failure_totals.values())
-    if total == 0:
+    """Each failure category as a share of all episodes (successes count in the denominator)."""
+    episodes = sum(stats.n for stats in report.tasks)
+    if episodes == 0:
         return {}
-    return {name: count / total for name, count in sorted(report.failure_totals.items())}
+    return {name: count / episodes for name, count in sorted(report.failure_totals.items())}
 
 
 def _tier_failure_shares(report: RunReport) -> dict[str, dict[str, float]]:
@@ -138,9 +140,58 @@ def _agent_label(report: RunReport) -> str:
     return report.config.agent.kind
 
 
+def _tier_rows(report: RunReport) -> list[dict[str, Any]]:
+    """Pooled success counts per tier, with a Wilson 95% interval on the success rate."""
+    rows: list[dict[str, Any]] = []
+    for tier in sorted({task.tier for task in report.tasks}):
+        group = [task for task in report.tasks if task.tier == tier]
+        episodes = sum(task.n for task in group)
+        successes = sum(task.c for task in group)
+        low, high = wilson_interval(successes, episodes)
+        rows.append(
+            {
+                "tier": tier,
+                "tasks": len(group),
+                "successes": successes,
+                "episodes": episodes,
+                "rate": successes / episodes if episodes else None,
+                "ci_low": low,
+                "ci_high": high,
+            }
+        )
+    return rows
+
+
+def _identical_action_tasks(
+    trajectories: list[Trajectory] | None, n_trials: int
+) -> dict[str, int] | None:
+    """Tasks whose trials all took the same action sequence (tool names and arguments).
+
+    Returns None when there are no trajectories or only one trial per task.
+    """
+    if not trajectories or n_trials < 2:
+        return None
+    by_task: dict[str, set[tuple[Any, ...]]] = {}
+    for traj in trajectories:
+        sequence = tuple(
+            (
+                step.action.kind,
+                step.action.tool_call.name if step.action.tool_call else None,
+                json.dumps(step.action.tool_call.arguments, sort_keys=True)
+                if step.action.tool_call
+                else "",
+            )
+            for step in traj.steps
+        )
+        by_task.setdefault(traj.task_id, set()).add(sequence)
+    identical = sum(1 for sequences in by_task.values() if len(sequences) == 1)
+    return {"identical": identical, "tasks": len(by_task)}
+
+
 def _run_record(report: RunReport, path: Path) -> dict[str, Any]:
     trajectories = load_trajectories(path.parent)
     env_path = path.parent / "env.json"
+    gap = _gap(report)
     pass_at: dict[str, Any] = {}
     pass_hat: dict[str, Any] = {}
     for k in _k_values(report):
@@ -177,6 +228,14 @@ def _run_record(report: RunReport, path: Path) -> dict[str, Any]:
         "pass_hat_k": pass_hat,
         "failure_shares": _failure_shares(report),
         "tier_failure_shares": _tier_failure_shares(report),
+        "tiers": _tier_rows(report),
+        "gap": {"mean": gap[0], "ci_low": gap[1], "ci_high": gap[2]} if gap else None,
+        "identical_action_tasks": _identical_action_tasks(trajectories, report.config.n_trials),
+        "tokens": {
+            "input_total": report.tokens.get("input_total"),
+            "output_total": report.tokens.get("output_total"),
+            "model_calls": report.tokens.get("model_calls"),
+        },
         "costs": _episode_costs(report, trajectories),
         "env_json": _rel(env_path) if env_path.is_file() else None,
         "report_json": _rel(path),
@@ -218,13 +277,38 @@ def _load_calibration() -> dict[str, Any] | None:
     }
 
 
+GATE_LABELS: dict[str, str] = {
+    "e5_v1_vs_v2.txt": (
+        "Pre-registered E5 comparison: baseline E3 1.5B (prompt v1), candidate E5 (prompt v2)."
+    ),
+    "e5_reversed_v2_baseline_v1_candidate.txt": (
+        "POST-HOC demonstration, NOT pre-registered: the same two E5 runs with the roles "
+        "swapped (baseline prompt v2, candidate prompt v1). It shows the gate firing on a "
+        "drop; it is not a second E5 result."
+    ),
+}
+
+
 def _load_gates() -> list[dict[str, str]]:
+    """Gate outputs from results/gates, verbatim, each with a label from GATE_LABELS.
+
+    A gate file without a label is refused, so that no gate output is shown without saying what
+    comparison it is.
+    """
     if not GATES_DIR.is_dir():
         return []
-    return [
-        {"file": _rel(path), "text": path.read_text(encoding="utf-8").rstrip()}
-        for path in sorted(GATES_DIR.glob("*.txt"))
-    ]
+    gates: list[dict[str, str]] = []
+    for path in sorted(GATES_DIR.glob("*.txt"), key=lambda p: ("reversed" in p.name, p.name)):
+        if path.name not in GATE_LABELS:
+            raise ValueError(f"{_rel(path)} has no label in GATE_LABELS")
+        gates.append(
+            {
+                "file": _rel(path),
+                "label": GATE_LABELS[path.name],
+                "text": path.read_text(encoding="utf-8").rstrip(),
+            }
+        )
+    return gates
 
 
 def collect_results() -> dict[str, Any]:
@@ -322,12 +406,44 @@ def _run_block(run: dict[str, Any]) -> list[str]:
         )
     if run["failure_shares"]:
         shares = ", ".join(f"{name} {_fmt_pct(v)}" for name, v in run["failure_shares"].items())
-        lines += ["", f"Failure shares (all episodes): {shares}."]
+        lines += ["", f"Failure categories, share of all episodes: {shares}."]
+    if run["gap"]:
+        gap = run["gap"]
+        lines += [
+            "",
+            "Gap pass@1 - pass^5: "
+            f"{gap['mean']:.3f} (95% CI [{gap['ci_low']:.3f}, {gap['ci_high']:.3f}]), "
+            "over tasks.",
+        ]
+    if run["tiers"]:
+        lines += [
+            "",
+            "| tier | tasks | successes / episodes | success rate (Wilson 95% CI) |",
+            "|---|---|---|---|",
+        ]
+        for tier in run["tiers"]:
+            rate = _fmt_pct(tier["rate"]) if tier["rate"] is not None else "n/a"
+            lines.append(
+                f"| {tier['tier']} | {tier['tasks']} | {tier['successes']} / {tier['episodes']} "
+                f"| {rate} [{_fmt_pct(tier['ci_low'])}, {_fmt_pct(tier['ci_high'])}] |"
+            )
+    if run["identical_action_tasks"]:
+        same = run["identical_action_tasks"]
+        lines += [
+            "",
+            f"Tasks whose trials all took the same action sequence: {same['identical']} of "
+            f"{same['tasks']}.",
+        ]
     if costs["median_wall_s"] is not None:
-        lines.append(
+        tokens = run["tokens"]
+        lines += [
+            "",
             f"Median per episode: {costs['median_wall_s']:.1f} s wall, "
-            f"{costs['median_output_tokens']:.0f} output tokens."
-        )
+            f"{costs['median_output_tokens']:.0f} output tokens. Totals: "
+            f"{tokens['input_total']} input and {tokens['output_total']} output tokens over "
+            f"{tokens['model_calls']} model calls. Timing was measured on a shared laptop, not a "
+            "benchmark (see docs/deviations.md, D29).",
+        ]
     links = [f"[report]({run['report_json']})"]
     if run["env_json"]:
         links.append(f"[env]({run['env_json']})")
@@ -638,8 +754,14 @@ def _block(results: dict[str, Any], contract: dict[str, Any]) -> str:
     for run in results["runs"]:
         lines += _run_block(run) + [""]
     for gate_file in results["gates"]:
-        lines += [f"Gate output, [`{gate_file['file']}`]({gate_file['file']}):", "", "```"]
-        lines += [gate_file["text"], "```", ""]
+        lines += [
+            f"{gate_file['label']} Gate output, [`{gate_file['file']}`]({gate_file['file']}):",
+            "",
+            "```",
+            gate_file["text"],
+            "```",
+            "",
+        ]
     if not results["runs"] and not results["calibration"]:
         lines.append(NO_RESULTS)
     return "\n".join(lines).rstrip() + "\n"
