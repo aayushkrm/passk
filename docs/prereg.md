@@ -168,3 +168,22 @@ day) was used up, the run stopped on a provider quota error, and no episode was 
 3. **Quota stop.** A provider quota error ends the run with a partial report, exit code 2, and
    the reset time when the provider gave one. A 429 with an exhausted quota is not retried
    (`docs/deviations.md`, D22).
+
+## Amendment 3 (before any E7b result exists)
+
+Recorded after the daily free-tier quota reset (50 free-model requests for the account) and
+before any E7b run. The full E7 design (24 tasks x 3 trials, about 72 episodes and several
+hundred model requests) cannot fit in one day's quota. E7b is a smaller, stratified, descriptive
+run of the same agent:
+
+- **Tasks:** `t1_01`, `t2_01`, `t3_01` (the first task of each tier), 3 trials each, 9 episodes.
+- **Everything else as E7:** model `nvidia/nemotron-3-ultra-550b-a55b:free`, prompt v1, T=0.7,
+  MCP stdio, base seed 2026, 3 s pacing, key from the environment only.
+- **Stop rule:** if the quota runs out, the run stops cleanly and the partial report is labelled
+  `complete: false`. A partial or complete E7b is reported as is. No retries across days are
+  planned for this amendment.
+- **Not claimed:** with 3 tasks, E7b says nothing about the model's reliability in general. It
+  shows that the hosted arm runs end to end and gives a small descriptive sample. It is not
+  compared to E3 by any test.
+- **Selection:** the three tasks are the first of each tier, chosen before any run, not for their
+  difficulty.
