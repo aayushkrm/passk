@@ -353,3 +353,52 @@ formatting in the gate reasons, the CLI, the site and the README renderer now go
 `passk.numfmt.fixed`, which rounds ties half away from zero. No measured value changed. The two
 stored gate outputs, `results/headline.json` and the README block were regenerated; the E5
 baseline reads 0.138 (was 0.137) and one pass^2 table cell reads 0.538 (was 0.537).
+
+## Qwen3 arm, E6, E7b and the headline
+
+### D32. Qwen3-1.7B arm: timing check, and the smoke evidence
+
+- The Qwen3-1.7B Q8_0 arm (`configs/e3_qwen3_17b.yaml`, `/no_think`, n_ctx 4096) ran at n = 5, 24
+  tasks, complete. The timing check (the 40 s median rule, applied to this arm before the full run)
+  is recorded in the results block for the Qwen3 run: the median episode wall time is below 40 s, so
+  the arm ran at n = 5 as configured.
+- The check before the full run used smoke episodes of 13 to 28 s, as reported by the coordinator.
+  **That smoke output is not in this repository.** `runs/` holds only the 0.5B E3 smoke run and the
+  E7 smoke run, so the smoke figures cannot be checked here. The completed run is the evidence in
+  this repository.
+- The completed run has one slow episode. Its wall time is in the trajectories, and the block's
+  median is not affected by it. It was not investigated.
+- The 40 s rule was written for the 1.5B arm (D9). Applying it to the Qwen3 arm is a choice made
+  here, not a pre-registered rule for that arm.
+
+### D33. E6 ran as pre-registered (1.5B, flaky_p 0.2, n = 3)
+
+- E6 (`configs/e6_flaky.yaml`) ran with 24 tasks x 3 trials, the design in `docs/prereg.md`. It is a
+  descriptive robustness run. It is compared with the E3 1.5B baseline (5 trials per task) without a
+  significance claim, because the trial counts differ and the runs are not paired.
+- The recovery figure in the results block is the pre-registered measure: the share of episodes with
+  at least one transient failure that still succeeded. The renderer computes it from the
+  trajectories and labels it.
+
+### D34. E7b under amendment 3; the free-tier quota used
+
+- E7b (`configs/e7b_hosted_stratified.yaml`) ran under amendment 3 of `docs/prereg.md`, which was
+  committed before the run. It has three tasks (the first of each tier, `t1_01`, `t2_01`, `t3_01`),
+  three trials each, nine episodes. It is complete.
+- It used 48 model calls, against the account's 50 free requests per day (the coordinator reports
+  the 48 used). Each model call is one step of an episode that makes a model decision.
+- The model id reported by the provider equals the requested id. Free-tier routing and model
+  versions can change between days, so the id is recorded per run and stated in the block.
+- All nine episodes succeeded. This is a small descriptive sample. It supports no general claim.
+- The full E7 design (24 tasks x 3 trials) was not run. It needs more free requests per day than the
+  account allows (D21, D22). No E7 full-design results are committed.
+
+### D35. Headline items and the formatting of new numbers
+
+- The hub headline has six items, and exactly three are featured: the E3 1.5B item, the Qwen3 item and
+  the E5 gate item. The E3 0.5B item is not featured. E6 and E7b are in the README and the site, not in
+  the headline, because the item cap is full.
+- Every number the renderer prints goes through `passk.numfmt.fixed`, which rounds ties half away
+  from zero after removing float noise. CI on Python 3.12 had rounded a tie differently (commit
+  `4845ea3`), so raw format strings were replaced.
+- The E6 and E7b tables are descriptive. Neither has a significance test, and each says why.
