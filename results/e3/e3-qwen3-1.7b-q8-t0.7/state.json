@@ -1,0 +1,10 @@
+{
+  "config_hash": "124ec1baf9a45b5b3ea07a979b56c3069cd35071d1763329f36d5f5df27be7a6",
+  "episodes_done": 120,
+  "episodes_total": 120,
+  "reason": null,
+  "reset_at": null,
+  "run_id": "e3-qwen3-1.7b-q8-t0.7",
+  "schema": "passk-run-state-1",
+  "status": "complete"
+}
