@@ -528,7 +528,7 @@ def _gap_item(
     prefix = "" if report.complete else "PARTIAL: "
     detail = (
         f"{_episodes(report)} episodes, {len(report.tasks)} tasks, {_short_model(report)}. "
-        f"Failure leader: {_leader(report)}."
+        f"n counts episodes. Failure leader: {_leader(report)}."
     )
     if not report.complete:
         detail += f" Stopped early: {report.stop_reason}."
@@ -578,7 +578,7 @@ def _e5_item(reports: list[tuple[Path, RunReport]]) -> dict[str, Any] | None:
         "e5-regression",
         "E5 prompt v2 vs v1 (1.5B), regression gate",
         "PASS" if decision.passed else "FAIL",
-        " | ".join(decision.reasons),
+        " | ".join(decision.reasons) + " n counts the candidate run's episodes.",
         n=_episodes(cand),
         ci=(
             f"delta 95% CI [{decision.ci_low:+.3f}, {decision.ci_high:+.3f}] "
@@ -605,7 +605,7 @@ def _e7_item(reports: list[tuple[Path, RunReport]]) -> dict[str, Any] | None:
             "E7 hosted free-tier model (descriptive)",
             f"PARTIAL: {progress} episodes",
             f"Stopped: {report.stop_reason}.{reset} The full run was not completed on the free "
-            "quota; this is not a full result.",
+            "quota; this is not a full result. n counts the finished episodes.",
             n=done,
             ci=None,
             synthetic=False,
@@ -629,7 +629,8 @@ def _e1_item(calibration: dict[str, Any] | None) -> dict[str, Any] | None:
         f"max abs error {e1['max_abs_error']:.4f}",
         f"Over k = 1..5 and per-step error p in {{{noise}}}, {e1['n_trials']} trials per task. "
         f"Largest |z| {e1['max_abs_z']:.2f}; a value below 3.0 is consistent with the analytic "
-        "pass^k. Calibrates the tool, not a model.",
+        "pass^k. Calibrates the tool, not a model. No n is given: the value is a maximum over "
+        "cells, not a sample size.",
         n=None,
         ci=None,
         synthetic=calibration["label"] == SYNTHETIC,
@@ -648,8 +649,8 @@ def _e2_item(calibration: dict[str, Any] | None) -> dict[str, Any] | None:
         "E2 gate calibration: false-alarm rate and power",
         f"false alarm {_fmt_pct(aa['rate'])}, power {_fmt_pct(ab['power'])}",
         f"Gate k={e2['policy']['k']}, max_drop={e2['policy']['max_drop']}; {e2['pairs']} A/A "
-        f"and {e2['pairs']} A/B pairs at {e2.get('trials_per_task')} trials per task. Calibrates "
-        "the tool, not a model.",
+        f"and {e2['pairs']} A/B pairs at {e2.get('trials_per_task')} trials per task. n counts "
+        "the pairs in each arm. Calibrates the tool, not a model.",
         n=e2["pairs"],
         ci=(
             f"false alarm 95% CI [{_fmt_pct(aa['ci95'][0])}, {_fmt_pct(aa['ci95'][1])}]; "

@@ -77,12 +77,16 @@ and how it was checked.
   the E5 config and the 1.5B arm of the timing rule cannot run until the Q4_K_M file is present.
   The configs assume `~/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/qwen2.5-1.5b-instruct-q4_k_m.gguf`.
 
-### D9. Timing rule for the 1.5B arm (not yet decided)
+### D9. Timing rule for the 1.5B arm (applied; not triggered)
 
-- The 40 s and 90 s rules in `docs/prereg.md` depend on the median 1.5B episode time, which
-  cannot be measured until D8 is resolved. From the 0.5B smoke runs, each model call takes a few
-  seconds, and an episode makes several calls, so the 1.5B median is likely above 40 s. The
-  n = 3 change, if it is needed, is logged when the rule is applied.
+- The prereg's timing rule (`docs/prereg.md`, E3) asks for n = 3 on the 1.5B arm if its median
+  episode takes more than 40 s, and drops the arm above 90 s. The check was made on the completed
+  E3 runs. No 1.5B smoke run was made before the full run, so the prereg's "decided from the smoke
+  runs" wording was not followed for this arm (D20 said otherwise; it is corrected there).
+- The medians of wall time per episode, from the committed trajectories (the results block gives
+  the same numbers), are 23.5 s for the 0.5B run and 26.4 s for the 1.5B run. Both runs were on a
+  shared laptop (D29). Both are below 40 s, so neither rule triggered, and the 1.5B arm ran at
+  n = 5 as configured.
 
 ### D10. Model SHA-256 and repo id in env.json (added)
 
@@ -186,7 +190,8 @@ All of these are recorded in `docs/prereg.md`, Amendment 1.
 ### D20. Qwen2.5-1.5B weights are on disk (closes D8)
 
 - The Q4_K_M file is in `~/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/`. The E3 1.5B, E5 and E6
-  configs can run. D9 (the 40 s rule) is applied after the 1.5B smoke run, as the prereg says.
+  configs can run. D9 records the timing-rule check. No 1.5B smoke run was made; the check uses
+  the completed E3 medians instead (see D9).
 
 ## Hosted quota and resumable runs (after the first E7 attempt)
 
@@ -288,8 +293,8 @@ All of these are recorded in `docs/prereg.md`, Amendment 1.
 
 ### D27. E3 ran from a dirty working tree; provenance now records a digest of it
 
-- Both E3 `env.json` files record `git_sha` 096ccb8 with `git_dirty` true. The working tree had
-  uncommitted changes that the commit does not describe. `git_dirty` has been in `env.json` since
+- Both E3 `env.json` files record `git_sha` 096ccb8, `git_dirty` true, and no digest (dirty, no
+  digest recorded). The working tree had uncommitted changes. `git_dirty` has been in `env.json` since
   the environment record was added, so the flag was present; what was missing was which dirty
   state a run came from.
 - **Change.** `env.json` now also records `git_diff_sha256`: a SHA-256 over the binary diff against

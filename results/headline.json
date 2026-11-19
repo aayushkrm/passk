@@ -3,7 +3,7 @@
   "items": [
     {
       "ci": "95% CI on the gap [0.000, 0.025]",
-      "detail": "120 episodes, 24 tasks, Qwen2.5-0.5B-Instruct. Failure leader: tool_error_unrecovered 57.5% of episodes.",
+      "detail": "120 episodes, 24 tasks, Qwen2.5-0.5B-Instruct. n counts episodes. Failure leader: tool_error_unrecovered 57.5% of episodes.",
       "featured": true,
       "id": "e3-qwen2.5-0.5b",
       "label": "E3 Qwen2.5-0.5B-Instruct (Q4_K_M)",
@@ -14,7 +14,7 @@
     },
     {
       "ci": "95% CI on the gap [0.250, 0.517]",
-      "detail": "120 episodes, 24 tasks, Qwen2.5-1.5B-Instruct. Failure leader: policy_violation 15.8% of episodes.",
+      "detail": "120 episodes, 24 tasks, Qwen2.5-1.5B-Instruct. n counts episodes. Failure leader: policy_violation 15.8% of episodes.",
       "featured": true,
       "id": "e3-qwen2.5-1.5b",
       "label": "E3 Qwen2.5-1.5B-Instruct (Q4_K_M)",
@@ -25,7 +25,7 @@
     },
     {
       "ci": "delta 95% CI [+0.117, +0.417] (delta +0.258)",
-      "detail": "pass^3: baseline 0.137, candidate 0.396, delta +0.258 (95% CI [+0.117, +0.417], 24 tasks) | drop -0.258 is within max_drop 0.100",
+      "detail": "pass^3: baseline 0.137, candidate 0.396, delta +0.258 (95% CI [+0.117, +0.417], 24 tasks) | drop -0.258 is within max_drop 0.100 n counts the candidate run's episodes.",
       "featured": true,
       "id": "e5-regression",
       "label": "E5 prompt v2 vs v1 (1.5B), regression gate",
@@ -36,7 +36,7 @@
     },
     {
       "ci": null,
-      "detail": "Over k = 1..5 and per-step error p in {0.00, 0.05, 0.10, 0.20}, 20 trials per task. Largest |z| 1.72; a value below 3.0 is consistent with the analytic pass^k. Calibrates the tool, not a model.",
+      "detail": "Over k = 1..5 and per-step error p in {0.00, 0.05, 0.10, 0.20}, 20 trials per task. Largest |z| 1.72; a value below 3.0 is consistent with the analytic pass^k. Calibrates the tool, not a model. No n is given: the value is a maximum over cells, not a sample size.",
       "featured": false,
       "id": "e1-estimator",
       "label": "E1 estimator, max absolute error of pass^k",
@@ -47,7 +47,7 @@
     },
     {
       "ci": "false alarm 95% CI [2.0%, 7.7%]; power 95% CI [90.4%, 96.9%]",
-      "detail": "Gate k=3, max_drop=0.1; 200 A/A and 200 A/B pairs at 5 trials per task. Calibrates the tool, not a model.",
+      "detail": "Gate k=3, max_drop=0.1; 200 A/A and 200 A/B pairs at 5 trials per task. n counts the pairs in each arm. Calibrates the tool, not a model.",
       "featured": false,
       "id": "e2-gate",
       "label": "E2 gate calibration: false-alarm rate and power",

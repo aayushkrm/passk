@@ -260,3 +260,15 @@ def test_headline_sources_are_relative_and_present() -> None:
         assert not item["source"].startswith("/")
         assert (REPO / item["source"]).is_file(), item["source"]
         assert "/Users/" not in json.dumps(item)
+
+
+def test_item_details_say_what_n_counts() -> None:
+    report = _report(
+        "report_baseline.json", "e3-qwen2.5-0.5b-t0.7", repo="Qwen/Qwen2.5-0.5B-Instruct-GGUF"
+    )
+    item = RR.build_headline(_results([report], CALIBRATION))["items"][0]
+    assert "n counts episodes" in item["detail"]
+    e2 = next(
+        i for i in RR.build_headline(_results([], CALIBRATION))["items"] if i["id"] == "e2-gate"
+    )
+    assert "n counts the pairs" in e2["detail"]
