@@ -297,6 +297,4 @@ See [`CITATION.cff`](CITATION.cff).
 
 ## Continuous integration
 
-The workflow files are in `ci-templates/`. They are not active yet because the publishing
-token had no `workflow` scope. To turn them on, run `gh auth refresh -h github.com -s workflow`
-and then `scripts/enable-ci.sh`.
+The CI workflow is `.github/workflows/ci.yml`. The Pages workflow (`pages.yml`) stays in `ci-templates/`, because the site is deployed from the `gh-pages` branch.
