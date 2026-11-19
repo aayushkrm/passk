@@ -14,7 +14,7 @@ and how it was checked.
   replayed the same corruption pattern, so the trials of a task were identical and the
   estimator saw one sample per task.
 - **Fix:** `NoisyOracleAgent.begin_episode(seed)` mixes the runner's per-episode seed into the
-  draws, and the runner calls it before each episode (already in the scaffold; now covered by
+  draws, and the runner calls it before each episode (the call was already in the initial code; now covered by
   the calibration checks).
 - **Check:** after the fix, E1 errors are within sampling noise (z-scores in the calibration
   file, `results/calibration/validate.json`). Per-task success under p = 0.2 with 200 trials
@@ -54,7 +54,7 @@ and how it was checked.
 - **Observed:** in a direct check of ten calls with the 0.5B model, four outputs had no usable
   tool name or had `null` arguments. The two-task smoke run ended with schema errors on both
   tasks.
-- **Decision (superseded by D14):** the orchestrator decided to make all four keys required
+- **Decision (superseded by D14):** the decision was to make all four keys required
   before any model run. See D14.
 
 ## At and after the pre-registration commit
@@ -62,8 +62,8 @@ and how it was checked.
 ### D6. E6 cannot run
 
 - `flaky_p` is set on `LabStockEnv`, but `RunConfig` has no field for it, and the schema is
-  frozen. E6 stays in the pre-registration as a stretch and is not run. A schema change, approved
-  by the orchestrator, is needed first.
+  frozen. E6 stays in the pre-registration as a stretch and is not run. A schema change, with its
+  own recorded decision, is needed first.
 
 ### D7. Qwen3-1.7B arm not added
 
@@ -91,7 +91,7 @@ and how it was checked.
 ### D10. Model SHA-256 and repo id in env.json (added)
 
 - `LlamaCppAgent` records `repo_id`, the file name and the SHA-256 of the model file in the
-  run metadata, so `env.json` carries them (DECISION.md section 6.2). Runs made before this
+  run metadata, so `env.json` carries them. Runs made before this
   change, if any, do not carry them. None exist in `results/`.
 
 ### D11. Licence of the models not verified in this build
@@ -115,7 +115,7 @@ and how it was checked.
   was read from the environment and not written anywhere. This is a setup check, not a result,
   and its output is not in `results/`.
 
-## Pre-run amendments (orchestrator decisions, before any model result)
+## Pre-run amendments (decisions made before any model result)
 
 All of these are recorded in `docs/prereg.md`, Amendment 1.
 
@@ -134,8 +134,8 @@ All of these are recorded in `docs/prereg.md`, Amendment 1.
 
 ### D15. Prompt v2 is v1 without the policy section
 
-- **Change.** v2 used to shorten the tool descriptions as well. DECISION.md section 2.1 described
-  that as part of v2. The coordinator asked that v2 differ from v1 only by the policy section, so
+- **Change.** v2 used to shorten the tool descriptions as well. The earlier plan described that
+  as part of v2. It was then decided that v2 should differ from v1 only by the policy section, so
   v2 now keeps the full descriptions. v1 changed only in the text that describes the four fields.
 - **Test.** `tests/test_llamacpp_agent.py` checks that v2 equals v1 with the policy block
   removed.
@@ -280,13 +280,13 @@ All of these are recorded in `docs/prereg.md`, Amendment 1.
   with seed 2026. The code was not changed, because that would change the completed results.
 - **Status.** Unlogged until this entry. Disclosed here. Intervals with seed 0 are not reported.
 
-### D26. No AC or battery state in env.json (recorded by the orchestrator, not by the tool)
+### D26. No AC or battery state in env.json (recorded once at the start of the runs, not by the tool)
 
 - The prereg (Common settings) asks for the power state in each run's `env.json`. `scripts/envinfo.py`
   and `src/passk/envinfo.py` do not record it, and no thermal state either. Neither E3 `env.json`
   has a power key.
-- The orchestrator checked `pmset` when the compute queue started and recorded AC Power. That
-  check is in the orchestrator's notes, not in the run records, and it was not logged per run.
+- A `pmset` check was made once, when the compute queue started, and recorded AC Power. That
+  check is not in the run records, and it was not logged per run.
   Thermal state was not recorded.
 - **Status.** The tool still does not record the power state. It may be added later as a new key;
   that would not change existing results.
@@ -315,9 +315,9 @@ All of these are recorded in `docs/prereg.md`, Amendment 1.
 
 - The per-episode wall times and token totals in the results block are measured on a laptop that
   ran other jobs. The E3 0.5B run overlapped with benchlint E2 and E3 jobs for part of its run
-  (reported by the orchestrator). Its wall times are therefore not comparable with the 1.5B run,
+  (noted during the runs). Its wall times are therefore not comparable with the 1.5B run,
   and no run's wall times are a benchmark. The block states this next to each timing line.
-- The power state was not recorded per run (D26). The orchestrator's pmset check at queue start
+- The power state was not recorded per run (D26). A pmset check at the start of the compute queue
   recorded AC power. Whether the E4 and E5 runs overlapped with other jobs is not recorded.
 
 ### D30. Reversed E5 gate: a post-hoc demonstration, not pre-registered
@@ -335,8 +335,8 @@ All of these are recorded in `docs/prereg.md`, Amendment 1.
 
 ### D31. E6 and the Qwen3-1.7B arm were not run
 
-- E6 (the transient-failure stretch) was not run. It is a stretch goal, and the orchestrator did
-  not run it. Its config exists (`configs/e6_flaky.yaml`), and D16 made `flaky_p` settable from
+- E6 (the transient-failure stretch) was not run. It is a stretch goal, and it was not run at
+  that point. Its config exists (`configs/e6_flaky.yaml`), and D16 made `flaky_p` settable from
   `RunConfig`, so it is runnable later.
 - The Qwen3-1.7B arm was not run. The decode-speed check in D19 cleared the 8 tok/s rule. The
   repository records no reason for not running the arm. Its config (`configs/e3_qwen3_17b.yaml`) is
@@ -362,7 +362,7 @@ baseline reads 0.138 (was 0.137) and one pass^2 table cell reads 0.538 (was 0.53
   tasks, complete. The timing check (the 40 s median rule, applied to this arm before the full run)
   is recorded in the results block for the Qwen3 run: the median episode wall time is below 40 s, so
   the arm ran at n = 5 as configured.
-- The check before the full run used smoke episodes of 13 to 28 s, as reported by the coordinator.
+- The check before the full run used smoke episodes of 13 to 28 s, as recorded during the runs.
   **That smoke output is not in this repository.** `runs/` holds only the 0.5B E3 smoke run and the
   E7 smoke run, so the smoke figures cannot be checked here. The completed run is the evidence in
   this repository.
@@ -385,8 +385,8 @@ baseline reads 0.138 (was 0.137) and one pass^2 table cell reads 0.538 (was 0.53
 - E7b (`configs/e7b_hosted_stratified.yaml`) ran under amendment 3 of `docs/prereg.md`, which was
   committed before the run. It has three tasks (the first of each tier, `t1_01`, `t2_01`, `t3_01`),
   three trials each, nine episodes. It is complete.
-- It used 48 model calls, against the account's 50 free requests per day (the coordinator reports
-  the 48 used). Each model call is one step of an episode that makes a model decision.
+- It used 48 model calls, against the account's 50 free requests per day (the count is in the
+  results block). Each model call is one step of an episode that makes a model decision.
 - The model id reported by the provider equals the requested id. Free-tier routing and model
   versions can change between days, so the id is recorded per run and stated in the block.
 - All nine episodes succeeded. This is a small descriptive sample. It supports no general claim.

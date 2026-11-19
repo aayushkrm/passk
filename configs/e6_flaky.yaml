@@ -1,4 +1,4 @@
-# E6 stretch, Qwen2.5-1.5B-Instruct Q4_K_M, T=0.7, prompt v1, 24 tasks x 3 trials, MCP stdio.
+# E6 descriptive robustness run, Qwen2.5-1.5B-Instruct Q4_K_M, T=0.7, prompt v1, 24 tasks x 3 trials, MCP stdio.
 # Transient tool failures: each call fails once with probability 0.2 (seeded per episode).
 run_id: e6-qwen2.5-1.5b-flaky0.2
 env: labstock

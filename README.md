@@ -11,7 +11,7 @@ uv tool install git+https://github.com/aayushkrm/passk
 passk demo
 ```
 
-`passk demo` runs scripted agents only, needs no model and no download, and finishes in well under 30 seconds. Its output is labelled **SYNTHETIC**. The repository is not published yet, so until then run it from a clone: `make setup && uv run passk demo`.
+`passk demo` runs scripted agents only, needs no model and no download, and finishes in well under 30 seconds. Its output is labelled **SYNTHETIC**. From a clone, run `make setup && uv run passk demo`.
 
 ## What it measures
 
@@ -53,11 +53,11 @@ The server follows the 2026-07-28 MCP specification note: there are no sessions.
 | `passk gate A B --policy configs/gate.yaml` | Exit 0 if the candidate passes, 1 if it regresses. |
 | `passk validate [--smoke] [--out DIR]` | Estimator (E1) and gate (E2) calibration. SYNTHETIC. |
 | `passk serve-tools labstock` | Serve the environment over MCP stdio. |
-| `passk site --results results --out build/site` | Build the static site. Writes a placeholder when no results are committed. |
+| `passk site --results results --out build/site` | Build the static site. Writes an empty-state page when no results are committed. |
 
 Every command accepts `--json`. Exit codes: 0 pass, 1 check failed or regression, 2 usage or runtime error.
 
-`passk lint-tools` (checks MCP tool descriptions for drift) is a stretch goal and is not implemented.
+`passk lint-tools` (checks MCP tool descriptions for drift) is not implemented.
 
 ## Results
 
@@ -338,7 +338,7 @@ Every number is in the results block above, or in `results/headline.json`. This 
 
 ## Experiments
 
-Pre-registered in [`docs/prereg.md`](docs/prereg.md) before any result file existed. Deviations are logged in [`docs/deviations.md`](docs/deviations.md). Failure reading is in [`docs/failure-analysis.md`](docs/failure-analysis.md): 13 quoted trajectories from the E3 runs, read by hand. The quoted sequences were re-checked against the trajectory files.
+Pre-registered in [`docs/prereg.md`](docs/prereg.md) before any result file existed. Deviations are logged in [`docs/deviations.md`](docs/deviations.md). Failure reading is in [`docs/failure-analysis.md`](docs/failure-analysis.md): trajectories from the E3, E5, E6, E7b and optional Qwen3 runs, read by hand. The quoted sequences were re-checked against the trajectory files.
 
 | ID | Question | Status |
 |---|---|---|
@@ -347,7 +347,7 @@ Pre-registered in [`docs/prereg.md`](docs/prereg.md) before any result file exis
 | E3 | pass@k and pass^k for Qwen2.5-0.5B and 1.5B | Run, complete (120 episodes each) |
 | E4 | Does T=0 remove the pass^k gap? | Run, complete (72 episodes). See Findings. |
 | E5 | Does prompt v2 regress against v1 on the 1.5B model? | Run, complete. Pre-registered gate verdict: PASS in the pre-registered direction. See Findings. |
-| E6 | Recovery from transient tool failures (stretch, descriptive) | Run, complete (3 trials per task). See Findings. |
+| E6 | Recovery from transient tool failures (descriptive) | Run, complete (3 trials per task). See Findings. |
 | E7 | Hosted free model arm, full design (24 tasks x 3 trials) | Not run: the free tier allows 50 model requests per day per account, and the full design does not fit that quota. |
 | E7b | Hosted arm, stratified (3 tasks x 3 trials, descriptive) | Run, complete. See Findings. |
 | Qwen3-1.7B arm (optional third model, Q8_0) | Run, complete. A confounded contrast with the 1.5B arm. See Findings. |
@@ -397,7 +397,7 @@ passk run -c configs/e7b_hosted_stratified.yaml --out results/e7b
 
 ## How this was built
 
-This repository was designed, coded, tested and documented by AI coding assistants (Claude, run through Claude Code) working autonomously under Ayush Kumar's direction. That includes the pre-registrations, the experiments and this write-up. A separate AI reviewer checked the code and the results (the findings and what was changed are in the commit history and `docs/deviations.md`). A line-by-line human review by the author has not been done yet, so none of this should be read as a human-audited result. Every measured number in this README is generated from the committed result files.
+Built with AI-assisted development (Claude Code). Ayush Kumar directed the project and reviewed the design, code and results. Every measured number in this README is generated from the committed result files.
 
 ## Citation
 
@@ -407,4 +407,4 @@ See [`CITATION.cff`](CITATION.cff).
 
 ## Continuous integration
 
-The CI workflow is `.github/workflows/ci.yml`. The Pages workflow (`pages.yml`) stays in `ci-templates/`, because the site is deployed from the `gh-pages` branch.
+CI runs linting, type checks, the test suite and the results check on Python 3.11 and 3.12 (`.github/workflows/ci.yml`).

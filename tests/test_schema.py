@@ -1,4 +1,4 @@
-"""Frozen-schema tests: JSON round trips, enum order and protocol shape."""
+"""Schema tests: JSON round trips, enum order and protocol shape."""
 
 from __future__ import annotations
 

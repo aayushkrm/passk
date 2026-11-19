@@ -166,7 +166,7 @@ def evaluate(assertion: Assertion, state: dict[str, Any]) -> bool:
 
 
 check_assertion = evaluate
-"""Alias of ``evaluate``, kept for callers written against the stub name."""
+"""Alias of ``evaluate``, kept as a second name for the same function."""
 
 
 def describe(assertion: Assertion) -> str:

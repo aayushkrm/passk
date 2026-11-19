@@ -35,7 +35,7 @@ report: results
 check-results:
 	$(UV) run python scripts/render_readme.py --check
 
-# Static Pages site from committed reports. Writes a placeholder when none are committed.
+# Static Pages site from committed reports. Writes an empty-state page when none are committed.
 site:
 	$(UV) run passk site --results results --out build/site
 

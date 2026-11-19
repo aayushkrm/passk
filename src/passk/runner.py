@@ -4,7 +4,7 @@ Output layout: ``runs/<run_id>/{trajectories.jsonl, spans.jsonl, report.json, en
 Every file is written after all episodes finish, and each one is replaced atomically, so a
 crash leaves no half-written report. A run whose directory already holds files is refused.
 
-Assumed signatures of other work packages (tests inject fakes through ``RunDeps``):
+Collaborators the runner calls (tests replace them through ``RunDeps``):
     passk.envs.base.load_tasks(tasks_glob: str) -> list[Task]
     passk.envs.labstock.LabStockEnv()                       (BaseEnv subclass)
     passk.transport.InProcessTransport(env)

@@ -474,10 +474,10 @@ def site_cmd(
     out: Annotated[str, typer.Option("--out", help="Output directory.")] = "build/site",
     json_output: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
 ) -> None:
-    """Build the static Pages site from the committed reports (placeholder when none exist)."""
+    """Build the static Pages site from the committed reports (empty-state page if none)."""
 
     def body() -> int:
-        from passk.site.build import build_site, placeholder_site
+        from passk.site.build import build_site, empty_site
 
         out_dir = Path(out)
         found = sorted(Path(results).rglob("report.json")) if Path(results).is_dir() else []
@@ -485,8 +485,8 @@ def site_cmd(
             index = build_site(Path(results), out_dir)
             status = "built"
         else:
-            index = placeholder_site(out_dir)
-            status = "placeholder"
+            index = empty_site(out_dir)
+            status = "empty"
         if json_output:
             _emit_json({"status": status, "index": str(index), "reports": len(found)})
         else:

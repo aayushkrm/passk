@@ -57,7 +57,7 @@ produced by a run made after this commit, with the seeds below.
 - **Settings:** T = 0.7, prompt v1, 24 tasks x 5 trials, MCP stdio.
 - **Measures:** pass@1 and pass@5; pass^1 to pass^5, each with a bootstrap 95% interval;
   failure categories by tier; median input and output tokens and median wall time per episode.
-- **Timing rules, decided from the smoke runs before the full run (DECISION.md section 2.1):**
+- **Timing rules, decided from the smoke runs before the full run:**
   if the median 1.5B episode takes more than 40 s, the 1.5B arm runs with n = 3; if more than
   90 s, the 1.5B arm is dropped. Either change is logged in `docs/deviations.md`.
 - **Prompt rule:** if both models score 0 on tier 1 in the smoke run, the prompt or the schema
@@ -134,9 +134,9 @@ in `docs/deviations.md` (D14 to D20).
    calls with the 0.5B model: 11 schema errors under the old schema and prompt, 0 under the new
    one (`docs/deviations.md`, D14).
 2. **Prompt v2.** v2 is now identical to v1 except for the policy section. Earlier, v2 also
-   shortened the tool descriptions, which DECISION.md section 2.1 described as part of v2. That
-   description is dropped here so that v2 differs from v1 only by the policy section, as the
-   coordinator asked. Logged as D15.
+   shortened the tool descriptions, which the earlier plan described as part of v2. That
+   description is dropped here so that v2 differs from v1 only by the policy section, as was
+   decided. Logged as D15.
 3. **Environment parameters.** `RunConfig` gained `env_params` (default `{}`). For labstock the
    only accepted key is `flaky_p`, and it reaches both the in-process environment and the MCP
    server. This makes E6 runnable (see E6). Logged as D16.

@@ -6,8 +6,8 @@ Guidance for AI coding agents and humans working in this repo.
 
 `passk` measures whether a tool-using agent succeeds every time, not just once.
 It runs an offline, CI-gated pass^k harness over a deterministic lab-inventory environment
-(`labstock`). Tools are served over MCP v2 stdio. Status: scaffold. Most modules are stubs
-that raise `NotImplementedError`; see "Layout".
+(`labstock`). Tools are served over MCP v2 stdio. The README states the results; `docs/`
+records the design, the pre-registration and every deviation from it.
 
 ## Setup
 
@@ -21,36 +21,54 @@ make test         # pytest -m "not model"
 Local model work needs the optional native build:
 `uv pip install -e '.[llama]'` (keep it out of CI; it is compiled on the developer machine).
 
-Other targets (`demo`, `report`, `check-results`, `site`, `release`) are stubs that print a TODO.
+## Make targets
+
+| Target | What it does |
+|---|---|
+| `setup` | `uv sync --python 3.11 --extra dev`. |
+| `lint` | `ruff check` and `ruff format --check`. |
+| `fmt` | `ruff check --fix` and `ruff format`. |
+| `type` | `mypy src`. |
+| `test` | `pytest -m "not model"`. |
+| `demo` | `passk demo`: scripted agents only, output labelled SYNTHETIC. |
+| `results` | Writes `results/headline.json` from the committed results. |
+| `report` | Runs `results`, then renders the README results block. |
+| `check-results` | Fails when the README block or `results/headline.json` is stale. |
+| `site` | Builds the static site into `build/site`. |
+| `release` | Builds the wheel and sdist into `dist/`. |
+| `dogfood` | Validates the smoke set and gates the committed fixtures (run in CI). |
 
 ## Layout
 
 ```
-src/passk/schema.py        FROZEN pydantic models and Env/Agent/ToolTransport protocols
+src/passk/schema.py        pydantic models and Env/Agent/ToolTransport protocols
 src/passk/envs/            base class and labstock environment
 src/passk/goals.py         assertion DSL over final state (pure functions)
-src/passk/tasks/labstock/  task YAML files (24 planned)
+src/passk/tasks/labstock/  24 task YAML files
 src/passk/transport.py     InProcessTransport, MCPStdioTransport
 src/passk/mcp_server.py    MCP v2 server (from mcp.server import MCPServer)
-src/passk/agents/          scripted agents, llama-cpp agent (lazy import)
+src/passk/agents/          scripted, llama-cpp and OpenAI-compatible agents (lazy imports)
 src/passk/runner.py        run(RunConfig) -> RunReport
 src/passk/metrics.py       pass@k, pass^k, bootstrap CIs
 src/passk/taxonomy.py      primary FailureCategory per trajectory
 src/passk/trace.py         OTel GenAI-named spans as JSONL
+src/passk/validate.py      estimator and gate calibration (E1, E2)
 src/passk/diff.py, gate.py run comparison and CI gate
+src/passk/envinfo.py       environment record (scripts/envinfo.py is a thin wrapper)
+src/passk/numfmt.py        shared number formatting for reports, gate output and the README
 src/passk/site/            static Pages site and report rendering
-src/passk/cli.py           typer app: run, report, diff, gate, serve-tools, validate, demo
-scripts/envinfo.py         environment record (copied per repo on purpose)
+src/passk/cli.py           typer app: run, report, diff, gate, serve-tools, validate, site, demo
+scripts/render_readme.py   README results block and results/headline.json
 tests/                     pytest; test_<module>.py next to each owner
 configs/                   run and gate configs
 results/                   committed, generated run outputs (never hand-edited)
-docs/                      design, prereg, deviations, limitations
+docs/                      design, prereg, deviations, limitations, failure analysis
 ```
 
 ## Invariants
 
-1. `src/passk/schema.py` is frozen. Only the orchestrator changes it. If you need a change,
-   write it in your report and keep a local adapter.
+1. Change `src/passk/schema.py` only together with a `schema_version` decision and an entry
+   in `docs/deviations.md`.
 2. `results/` is never hand-edited. Results come from `passk run`, and the README and site
    render from them.
 3. No network calls in tests. Mark tests that need a GGUF model with `@pytest.mark.model`;
@@ -72,4 +90,4 @@ docs/                      design, prereg, deviations, limitations
 
 - Exit codes for the CLI: 0 = pass, 1 = check failed or regression, 2 = usage or runtime error.
 - Every CLI command accepts `--json`.
-- Commit messages are plain and descriptive. Commits are made in real time (no backdating).
+- Commit messages are plain and descriptive. Do not backdate commits.

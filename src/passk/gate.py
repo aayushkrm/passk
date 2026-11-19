@@ -5,8 +5,7 @@ CI for the drop excludes 0 (when ``require_significance`` is set), or if the can
 mean pass^k@K falls below the absolute floor ``min_pass_hat_k``.
 
 The paired bootstrap resamples tasks. For each task it pairs the baseline and candidate
-pass^k@K values. It uses ``passk.metrics.paired_bootstrap`` when that function is
-implemented, and otherwise a local seeded fallback with the same definition.
+pass^k@K values, using ``passk.metrics.paired_bootstrap`` with a fixed seed.
 """
 
 from __future__ import annotations

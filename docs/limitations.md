@@ -62,12 +62,12 @@ section. Read it before drawing a conclusion from any number.
 
 ## Missing pieces
 
-- **E6 (recovery from transient failures)** is not run. `flaky_p` cannot be set from
-  `RunConfig`, and the schema is frozen. See `docs/deviations.md`.
-- **Human review of failures.** `docs/failure-analysis.md` is written by hand from a sample of
-  trajectories. The sample is small (10 trajectories), and it is a reading, not a measurement.
-- **Tool-description lint.** The check for poisoned or drifted MCP tool descriptions is a
-  stretch goal. Nothing in this repository checks tool descriptions yet.
+- **E6 (recovery from transient failures)** is a descriptive run with 3 trials per task. It is
+  compared with the 5-trial E3 baseline without a significance claim (`docs/deviations.md`, D33).
+- **Reading of failures.** `docs/failure-analysis.md` is a hand reading of a sample of
+  trajectories. The sample is small, and it is a reading, not a measurement.
+- **Tool-description lint.** The check for poisoned or drifted MCP tool descriptions is not
+  implemented. Nothing in this repository checks tool descriptions.
 
 ## Software
 

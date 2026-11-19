@@ -1,4 +1,4 @@
-"""Calibration of the estimator and the gate (DECISION.md section 2.1, experiments E1 and E2).
+"""Calibration of the estimator and the gate (experiments E1 and E2).
 
 Everything here runs on scripted agents, so the output is SYNTHETIC. It tests the tool
 against a known ground truth, not a model.

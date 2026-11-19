@@ -1,4 +1,4 @@
-"""Gate decisions on the SYNTHETIC fixtures, policy loading and the bootstrap fallback."""
+"""Gate decisions on the SYNTHETIC fixtures, policy loading and the paired bootstrap."""
 
 from __future__ import annotations
 
@@ -111,9 +111,7 @@ def test_gate_refuses_runs_with_different_trial_counts(baseline: RunReport) -> N
         gate(baseline, changed, GatePolicy(k=1, max_drop=0.10))
 
 
-def test_uses_metrics_bootstrap_when_implemented(
-    baseline: RunReport, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_uses_metrics_bootstrap(baseline: RunReport, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[int, float, int]] = []
 
     def fake(

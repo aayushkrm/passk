@@ -1,6 +1,6 @@
 # Design
 
-This file records the decisions behind `passk` and why they were made. The frozen interfaces
+This file records the decisions behind `passk` and why they were made. The interfaces
 are in `src/passk/schema.py` and are not described again here.
 
 ## What is measured
@@ -23,8 +23,9 @@ are in `src/passk/schema.py` and are not described again here.
 - 24 tasks in three tiers: single call, lookup then act, and policy-constrained or with
   near-duplicate names. Each task carries a reference solution. The reference solution is what
   the oracle agents replay and what the calibration uses for reference lengths.
-- Optional transient failures (`flaky_p`) exist in the environment. They are not yet reachable
-  from `RunConfig`, so the recovery experiment E6 cannot run (see `docs/deviations.md`).
+- Optional transient failures (`flaky_p`) are set through `env_params` in a `RunConfig`. The
+  in-process environment and the MCP server both receive the value. The recovery experiment E6
+  uses it (`configs/e6_flaky.yaml`; see `docs/deviations.md`, D16).
 
 ## Transports
 

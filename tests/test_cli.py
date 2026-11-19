@@ -1,4 +1,4 @@
-"""CLI tests: help text, gate exit codes, JSON output, and clean errors for stubs and bad input."""
+"""CLI tests: help text, gate exit codes, JSON output, and clean errors for bad input."""
 
 from __future__ import annotations
 
@@ -200,17 +200,17 @@ def test_report_bad_format_exits_2(tmp_path: Path) -> None:
     assert "--format" in result.output
 
 
-# stubs and runtime errors ------------------------------------------------------------------
+# runtime errors ----------------------------------------------------------------------------------
 
 
-def _not_yet(*_args: object, **_kwargs: object) -> None:
-    raise NotImplementedError("run: scheduled for work package P-D")
+def _unavailable(*_args: object, **_kwargs: object) -> None:
+    raise NotImplementedError("run: component unavailable in this test")
 
 
 def test_run_without_runner_exits_2_cleanly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(runner, "run", _not_yet)
+    monkeypatch.setattr(runner, "run", _unavailable)
     config = tmp_path / "run.yaml"
     config.write_text(
         "run_id: r\ntasks_glob: x\nagent: {kind: oracle}\nn_trials: 1\n"
@@ -230,7 +230,7 @@ def test_run_missing_config_exits_2(tmp_path: Path) -> None:
 
 
 def test_demo_without_runner_exits_2_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(runner, "run", _not_yet)
+    monkeypatch.setattr(runner, "run", _unavailable)
     result = runner_cli.invoke(app, ["demo"])
     assert result.exit_code == 2
     assert "Traceback" not in result.output
@@ -239,7 +239,7 @@ def test_demo_without_runner_exits_2_cleanly(monkeypatch: pytest.MonkeyPatch) ->
 def test_validate_without_task_loader_exits_2_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
     from passk.envs import base
 
-    monkeypatch.setattr(base, "load_tasks", _not_yet)
+    monkeypatch.setattr(base, "load_tasks", _unavailable)
     result = runner_cli.invoke(app, ["validate"])
     assert result.exit_code == 2
     assert "not implemented yet" in result.output

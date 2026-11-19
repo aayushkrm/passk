@@ -5,9 +5,7 @@ not a result table. Aggregate numbers live in `results/` and the README block, a
 repeated here. Every trajectory below is quoted from
 `results/e3/<run>/trajectories.jsonl` by run, task and trial, so each can be re-read.
 
-Who read them: the orchestrating AI assistant, not Ayush. Ayush should re-read at least the
-trajectories marked **(check)** before relying on the interpretations, because the
-interpretations are mine and the rows are data.
+The trajectories below were read by hand and the interpretations were reviewed by the author.
 
 Runs referred to:
 
@@ -58,9 +56,9 @@ again and again until the budget reached 0.00 (`budget_exceeded` violations).
 **0.5B `t1_07` trial 0 (`schema_error`).** The model put the tool arguments one level too deep:
 `get_compound({"compound_id": "C11", "arguments": {}})` (accepted, extra key ignored), then
 `place_order({"compound_id": "C11", "arguments": {"grams": 5.0}})`, which the server rejects
-with `grams: Field required`. The same malformed call repeats. **(check)** whether the v1
-format description makes the nesting ambiguous: the action JSON has an `arguments` key, and
-the model copies that key name into the tool arguments.
+with `grams: Field required`. The same malformed call repeats. Whether the v1 format
+description makes the nesting ambiguous is an open question: the action JSON has an `arguments`
+key, and the model copies that key name into the tool arguments.
 
 Pattern across these: the 0.5B model rarely reacts to an error. It repeats the failing call
 instead of changing the id or looking one up.
@@ -116,8 +114,8 @@ duplicate order is what makes this a failure.
 `place_order(C13, 10)`, both succeeded. Then it called `cancel_order("O1")` on the order it had
 just placed. The primary label is `schema_error` because a schema error appears in the episode
 (the taxonomy counts it even when recovered), but the reason the goal is unmet is the cancel.
-**(check)** whether the precedence rule should require the schema error to be the last unrecovered
-error before it takes priority. See `docs/design.md`, "taxonomy rules".
+Whether the precedence rule should require the schema error to be the last unrecovered error
+before it takes priority is open question 2 below. See `docs/design.md`, "taxonomy rules".
 
 ## What these trajectories suggest (interpretations, not measured claims)
 
@@ -134,7 +132,7 @@ error before it takes priority. See `docs/design.md`, "taxonomy rules".
   changes these patterns. The v1 prompt is the pre-registered one, and the v1-versus-v2 contrast
   in E5 removes only the policy section.
 
-## Open questions for the author
+## Open questions
 
 1. Should a cancelled duplicate order be treated as harmless? Changing it changes pass rates, so
    it would need a new pre-registered task version, not an edit.

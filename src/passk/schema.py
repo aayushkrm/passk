@@ -1,7 +1,7 @@
-"""Frozen interfaces for passk.
+"""Interfaces for passk.
 
-This module is FROZEN (DECISION.md §4.3). Only the orchestrator may change it.
-Builders needing a change must request it in their report and keep a local adapter.
+Change this module only together with a ``schema_version`` decision and an entry in
+``docs/deviations.md``.
 
 All data types are pydantic v2 models that round-trip through JSON. Every top-level
 report carries ``schema_version``. The ``Env``, ``Agent`` and ``ToolTransport``

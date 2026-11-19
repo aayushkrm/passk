@@ -1,6 +1,6 @@
 # Gate policy used by E2 (calibration) and E5 (regression check).
 # A candidate fails when pass^k at k=3 drops by more than max_drop AND the paired bootstrap
-# 95% CI for the drop excludes 0 (DECISION.md section 2.1).
+# 95% CI for the drop excludes 0.
 k: 3
 max_drop: 0.10
 require_significance: true
